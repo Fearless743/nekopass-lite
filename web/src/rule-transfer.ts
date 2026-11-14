@@ -54,7 +54,12 @@ export function prepareRuleImport(data: RuleImport, destination: ImportDestinati
     const rules = data.rules.flatMap(r => {
       if (r.protocol === 'tcp_udp' && !r.listen_port) throw new Error('旧合并规则请填写共同监听端口')
       const protocols: ('tcp' | 'udp')[] = r.protocol === 'tcp_udp' ? ['tcp', 'udp'] : [r.protocol || 'tcp']
-      return protocols.map(protocol => ({ ...r, protocol, user_id: destination.userID, targets: [...r.targets] }))
+      return protocols.map(protocol => {
+        const row = { ...r, protocol, user_id: destination.userID, targets: [...r.targets] } as RuleInput
+        if (row.entries?.length) row.entries = row.entries.map(e => ({ node_id: e.node_id, egress_node_id: e.egress_node_id || 0, egress_group_id: e.egress_group_id || 0 }))
+        else { row.node_id = row.node_id || 0; row.egress_node_id = row.egress_node_id || 0 }
+        return row
+      })
     })
     if (rules.length > 500) throw new Error('拆分后每次最多导入 500 条规则')
     return rules
@@ -75,6 +80,7 @@ export function prepareRuleImport(data: RuleImport, destination: ImportDestinati
 
 export function encodeNyanpassRules(rules: RuleInput[]): string {
   return rules.map(r => {
+ if(r.entries?.length&&r.entries.length>1)throw new Error(`规则「${r.name}」有多入口，请使用 Nekopass 完整备份导出`)
  if(r.tls_inbound_id||r.origin_tls?.enabled)throw new Error(`规则「${r.name}」请使用 Nekopass 完整备份保留 TLS 入站与回源设置`)
  if(r.protocol&&r.protocol!=='tcp')throw new Error(`规则「${r.name}」请使用 Nekopass 完整备份导出 UDP 类型`)
     if (!['off', 'auto', 'v1', 'v2'].includes(r.proxy_accept) || !['off', 'v1', 'v2'].includes(r.proxy_send)) throw new Error(`规则「${r.name}」的 Proxy Protocol 模式无法兼容导出`)

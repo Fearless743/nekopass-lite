@@ -55,7 +55,7 @@ func (s *Server) nodes(w http.ResponseWriter, r *http.Request) {
 	if !admin(w, r) {
 		return
 	}
-	rows, e := s.Pool.Query(r.Context(), `SELECT to_char(n.ingress_rate::numeric/10000,'FM9990.0000') AS ingress_multiplier,to_char(n.egress_rate::numeric/10000,'FM9990.0000') AS egress_multiplier,n.bandwidth_up_mbps,n.bandwidth_down_mbps,n.brutal_enabled,n.client_tcp_brutal_enabled,n.id,n.name,n.token,(n.instance_id<>'') AS bound,n.public_address,n.notes,n.enabled,n.listen_host,n.port_min,n.port_max,n.max_connections,n.dial_timeout_seconds,n.idle_timeout_seconds,n.udp_idle_timeout_seconds,n.ingress_enabled,n.deny_udp_ingress_creation,n.allow_direct,n.tunnel_exit_enabled,n.tunnel_protocol,CASE WHEN n.tunnel_protocol IN ('plain_h2','tls_h2','random_h2') THEN 'h2' WHEN n.tunnel_protocol='tls_h3' THEN 'h3' WHEN n.tunnel_protocol IN ('plain_udp','dtls_udp','random_udp') THEN 'raw_udp' ELSE 'raw_tcp' END AS tunnel_transport,CASE WHEN n.tunnel_protocol IN ('tls_tcp','tls_h2','dtls_udp','tls_h3') THEN 'tls' WHEN n.tunnel_protocol IN ('random_tcp','random_h2','random_udp') THEN 'random' ELSE 'none' END AS tunnel_security,n.mux_config AS mux,n.random_config AS random,n.tls_config AS tls,n.tls_status,n.tls_error,n.tls_not_after,n.protocol_version,n.tunnel_listen_host,n.tunnel_listen_port,n.tunnel_public_host,n.last_seen,n.applied_revision,n.config_revision,n.sync_error,n.active_connections,COALESCE(n.last_seen>now()-interval '12 seconds',false) AS online,COALESCE((SELECT array_agg(group_id ORDER BY group_id) FROM node_group_members WHERE node_id=n.id),'{}') AS group_ids,COALESCE((SELECT array_agg(ingress_node_id ORDER BY ingress_node_id) FROM node_tunnel_links WHERE egress_node_id=n.id),'{}') AS allowed_ingress_ids,(SELECT count(*) FROM rules WHERE node_id=n.id) AS rule_count FROM nodes n ORDER BY n.id`)
+	rows, e := s.Pool.Query(r.Context(), `SELECT to_char(n.ingress_rate::numeric/10000,'FM9990.0000') AS ingress_multiplier,to_char(n.egress_rate::numeric/10000,'FM9990.0000') AS egress_multiplier,n.bandwidth_up_mbps,n.bandwidth_down_mbps,n.brutal_enabled,n.client_tcp_brutal_enabled,n.id,n.name,n.token,(n.instance_id<>'') AS bound,n.public_address,n.notes,n.enabled,n.listen_host,n.port_min,n.port_max,n.max_connections,n.dial_timeout_seconds,n.idle_timeout_seconds,n.udp_idle_timeout_seconds,n.ingress_enabled,n.deny_udp_ingress_creation,n.allow_direct,n.tunnel_exit_enabled,n.tunnel_protocol,CASE WHEN n.tunnel_protocol IN ('plain_h2','tls_h2','random_h2') THEN 'h2' WHEN n.tunnel_protocol='tls_h3' THEN 'h3' WHEN n.tunnel_protocol IN ('plain_udp','dtls_udp','random_udp') THEN 'raw_udp' ELSE 'raw_tcp' END AS tunnel_transport,CASE WHEN n.tunnel_protocol IN ('tls_tcp','tls_h2','dtls_udp','tls_h3') THEN 'tls' WHEN n.tunnel_protocol IN ('random_tcp','random_h2','random_udp') THEN 'random' ELSE 'none' END AS tunnel_security,n.mux_config AS mux,n.random_config AS random,n.tls_config AS tls,n.tls_status,n.tls_error,n.tls_not_after,n.protocol_version,n.tunnel_listen_host,n.tunnel_listen_port,n.tunnel_public_host,n.last_seen,n.applied_revision,n.config_revision,n.sync_error,n.active_connections,COALESCE(n.last_seen>now()-interval '12 seconds',false) AS online,COALESCE((SELECT array_agg(group_id ORDER BY group_id) FROM node_group_members WHERE node_id=n.id),'{}') AS group_ids,COALESCE((SELECT array_agg(ingress_node_id ORDER BY ingress_node_id) FROM node_tunnel_links WHERE egress_node_id=n.id),'{}') AS allowed_ingress_ids,(SELECT count(*) FROM rule_entries WHERE node_id=n.id) AS rule_count FROM nodes n ORDER BY n.id`)
 	s.sendRows(w, rows, e)
 }
 func (s *Server) saveNode(w http.ResponseWriter, r *http.Request) { s.saveNodePart(w, r, "full") }
@@ -175,7 +175,7 @@ func (s *Server) saveNodePart(w http.ResponseWriter, r *http.Request, part strin
 	if id != 0 {
 		var blocked bool
 		if !v.IngressEnabled {
-			if e = tx.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM rules WHERE node_id=$1)", id).Scan(&blocked); e != nil {
+			if e = tx.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM rules WHERE node_id=$1 OR id IN (SELECT rule_id FROM rule_entries WHERE node_id=$1))", id).Scan(&blocked); e != nil {
 				s.dbError(w, e)
 				return
 			}
@@ -184,7 +184,7 @@ func (s *Server) saveNodePart(w http.ResponseWriter, r *http.Request, part strin
 				return
 			}
 		}
-		if e = tx.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM rules WHERE node_id=$1 AND egress_node_id IS NULL AND egress_group_id IS NULL)", id).Scan(&blocked); e != nil {
+		if e = tx.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM rules r WHERE (r.node_id=$1 OR EXISTS(SELECT 1 FROM rule_entries e WHERE e.rule_id=r.id AND e.node_id=$1)) AND r.egress_node_id IS NULL AND r.egress_group_id IS NULL AND NOT EXISTS(SELECT 1 FROM rule_entries e WHERE e.rule_id=r.id AND (e.egress_node_id IS NOT NULL OR e.egress_group_id IS NOT NULL)))", id).Scan(&blocked); e != nil {
 			s.dbError(w, e)
 			return
 		}
@@ -192,7 +192,7 @@ func (s *Server) saveNodePart(w http.ResponseWriter, r *http.Request, part strin
 			fail(w, 409, "此入口仍有直转规则，请先修改规则出口")
 			return
 		}
-		if e = tx.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM rules WHERE egress_node_id=$1)", id).Scan(&blocked); e != nil {
+		if e = tx.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM rules WHERE egress_node_id=$1 OR id IN (SELECT rule_id FROM rule_entries WHERE egress_node_id=$1))", id).Scan(&blocked); e != nil {
 			s.dbError(w, e)
 			return
 		}
@@ -213,7 +213,7 @@ func (s *Server) saveNodePart(w http.ResponseWriter, r *http.Request, part strin
 	}
 	if v.TunnelExitEnabled && tunnel.UDP(v.TunnelProtocol) && id != 0 {
 		var blocked bool
-		if err := tx.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM rules WHERE egress_node_id=$1 AND protocol<>'udp')", id).Scan(&blocked); err != nil {
+		if err := tx.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM rules r WHERE r.protocol<>'udp' AND (r.egress_node_id=$1 OR EXISTS(SELECT 1 FROM rule_entries e WHERE e.rule_id=r.id AND e.egress_node_id=$1)))", id).Scan(&blocked); err != nil {
 			s.dbError(w, err)
 			return
 		}
@@ -266,7 +266,7 @@ func (s *Server) saveNodePart(w http.ResponseWriter, r *http.Request, part strin
 		e = tx.QueryRow(ctx, "INSERT INTO nodes(name,token_hash,token) VALUES($1,$2,$3) RETURNING id", v.Name, tokenHash, token).Scan(&id)
 	} else {
 		var conflict bool
-		e = tx.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM rules WHERE node_id=$1 AND tls_inbound_id IS NULL AND listen_port NOT BETWEEN $2 AND $3)", id, v.PortMin, v.PortMax).Scan(&conflict)
+		e = tx.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM rules r JOIN rule_entries e ON e.rule_id=r.id WHERE e.node_id=$1 AND r.tls_inbound_id IS NULL AND r.listen_port NOT BETWEEN $2 AND $3)", id, v.PortMin, v.PortMax).Scan(&conflict)
 		if e == nil && conflict {
 			fail(w, 409, "已有规则端口超出新范围，请先修改这些规则")
 			return
@@ -332,7 +332,7 @@ func (s *Server) saveNodePart(w http.ResponseWriter, r *http.Request, part strin
 			return
 		}
 	}
-	if _, e = tx.Exec(ctx, "DELETE FROM node_tunnel_links l WHERE egress_node_id=$1 AND NOT (ingress_node_id=ANY($2::bigint[])) AND NOT EXISTS(SELECT 1 FROM rules r WHERE r.node_id=l.ingress_node_id AND r.egress_node_id=l.egress_node_id)", id, v.AllowedIngressIDs); e != nil {
+	if _, e = tx.Exec(ctx, "DELETE FROM node_tunnel_links l WHERE egress_node_id=$1 AND NOT (ingress_node_id=ANY($2::bigint[])) AND NOT EXISTS(SELECT 1 FROM rule_entries e WHERE e.node_id=l.ingress_node_id AND e.egress_node_id=l.egress_node_id)", id, v.AllowedIngressIDs); e != nil {
 		s.dbError(w, e)
 		return
 	}
@@ -403,7 +403,7 @@ func (s *Server) deleteNode(w http.ResponseWriter, r *http.Request) {
 	}
 	var enabled, online, synchronized, hasRules, hasLedger bool
 	e = tx.QueryRow(ctx, `SELECT enabled,COALESCE(last_seen>now()-interval '12 seconds',false),applied_revision>=config_revision,
- EXISTS(SELECT 1 FROM rules WHERE node_id=$1 OR egress_node_id=$1),
+ EXISTS(SELECT 1 FROM rules WHERE node_id=$1 OR egress_node_id=$1 OR id IN (SELECT rule_id FROM rule_entries WHERE node_id=$1 OR egress_node_id=$1)),
  EXISTS(SELECT 1 FROM grants WHERE node_id=$1) OR EXISTS(SELECT 1 FROM rule_usage WHERE node_id=$1)
  FROM nodes WHERE id=$1 FOR UPDATE`, id).Scan(&enabled, &online, &synchronized, &hasRules, &hasLedger)
 	if errors.Is(e, pgx.ErrNoRows) {

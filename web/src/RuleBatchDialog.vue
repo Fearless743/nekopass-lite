@@ -21,20 +21,21 @@ const hasSharedTLS=computed(()=>props.rules.some(r=>!!r.tls_inbound_id))
 const hasUDP=computed(()=>props.rules.some(r=>r.protocol==='udp'))
 const ingressNodes=computed(()=>props.nodes.filter(n=>n.ingress_enabled))
 function udpIngressAllowed(node:RuleNode){return !node.deny_udp_ingress_creation||props.rules.every(r=>r.protocol!=='udp'||r.node_id===node.id)}
-const ingressIDs=computed(()=>[...new Set(props.rules.map(r=>form.node_id??r.node_id))])
+const ruleNodeIDs=(r:any)=>r.entries?.length?r.entries.map((e:any)=>e.node_id):[r.node_id]
+const ingressIDs=computed(()=>[...new Set(props.rules.flatMap(r=>form.node_id?[form.node_id]:ruleNodeIDs(r)))])
 const directAllowed=computed(()=>ingressIDs.value.every(id=>props.nodes.some(n=>n.id===id&&n.allow_direct)))
 const exitNodes=computed(()=>props.nodes.filter(n=>n.tunnel_exit_enabled&&
  ingressIDs.value.every(id=>id!==n.id&&n.allowed_ingress_ids.includes(id))&&
  (!n.tunnel_protocol.endsWith('_udp')||props.rules.every(r=>r.protocol==='udp'))))
 
-const exitChoices=computed(()=>{if(!props.rules.length)return [];const choices=egressChoices(props.nodes,props.egressGroups||[],ingressIDs.value[0]||0,hasUDP.value?'udp':'tcp');return choices.filter(o=>props.rules.every(r=>egressChoices(props.nodes,props.egressGroups||[],form.node_id??r.node_id,r.protocol||'tcp').some(v=>v.value===o.value)))})
+const exitChoices=computed(()=>{if(!props.rules.length)return [];const choices=egressChoices(props.nodes,props.egressGroups||[],ingressIDs.value[0]||0,hasUDP.value?'udp':'tcp');return choices.filter(o=>props.rules.every(r=>ruleNodeIDs(r).every((nid:number)=>egressChoices(props.nodes,props.egressGroups||[],form.node_id??nid,r.protocol||'tcp').some(v=>v.value===o.value))))})
 const selectedEgress=computed({get:()=>form.egress_node_id==null&&form.egress_group_id==null?undefined:egressValue(form.egress_node_id,form.egress_group_id),set:(v:string|undefined)=>{delete form.egress_node_id;delete form.egress_group_id;if(v){const x=splitEgress(v);if(x.egress_group_id)form.egress_group_id=x.egress_group_id;else form.egress_node_id=x.egress_node_id}}})
 watch(exitChoices,()=>{if(selectedEgress.value&&!exitChoices.value.some(o=>o.value===selectedEgress.value))selectedEgress.value=undefined})
 function submit(){
  if(props.busy)return
  if(form.node_id&&ingressNodes.value.some(n=>n.id===form.node_id&&!udpIngressAllowed(n))){ElMessage.warning('所选入口禁止创建新的 UDP 入站规则');return}
  const patch:RuleBatchPatch={}
- for(const key of ['node_id','egress_node_id','egress_group_id','balance','proxy_accept_enabled','proxy_send_enabled'] as const){
+ for(const key of ['node_id','egress_node_id','egress_group_id','listen_port','balance','proxy_accept_enabled','proxy_send_enabled'] as const){
   const value=form[key]
   if(value!==undefined&&value!==null&&value!=='')Object.assign(patch,{[key]:value})
  }
@@ -53,7 +54,8 @@ function submit(){
     </el-select>
     <span class="field-tip">{{hasSharedTLS?'共享 TLS 规则切换入口时，请逐条选择新节点的共享 TLS 入口。':'更换入口会重新分配监听端口；选择原入口时保留端口。'}}</span>
    </el-form-item>
-   <el-form-item label="出口（留空不更新）">
+   <el-form-item label="监听端口（留空不更新，0 为随机分配）"><el-input :model-value="form.listen_port ?? ''" @update:model-value="form.listen_port=$event===''?undefined:Number($event)||0" @clear="clearField('listen_port')" clearable placeholder="保持原端口" type="number" :min="0" :max="65535" /><span class="field-tip">多入口规则共用同一监听端口，须落在所有入口的端口范围交集中。</span></el-form-item>
+    <el-form-item label="出口（留空不更新）">
     <EgressSelect v-model="selectedEgress" :options="exitChoices" clearable @clear="selectedEgress=undefined" placeholder="保持原出口" data-testid="batch-rule-egress"/>
    </el-form-item>
    <el-collapse v-model="advanced">

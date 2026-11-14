@@ -1556,19 +1556,28 @@ components:
       additionalProperties: false
       description: 'For action edit. Omitted or null fields remain unchanged. At least one non-null field is required. All selected rules must pass normal ownership, node permissions and resource validation.'
       properties:
-        node_id: {type: integer, format: int64, minimum: 1, nullable: true, description: 'Changing an ordinary ingress assigns a new random port; same ingress retains the port. Shared TLS rules cannot move through this patch.'}
-        egress_group_id: {type: integer, format: int64, minimum: 0, nullable: true, description: 'Nonzero selects an explicitly authorized group and clears the single-node exit'}
-        egress_node_id: {type: integer, format: int64, minimum: 0, nullable: true, description: '0 explicitly selects direct forwarding; requires permission on every effective ingress'}
+        node_id: {type: integer, format: int64, minimum: 1, nullable: true, description: 'Changing an ordinary ingress assigns a new random port; same ingress retains the port. Shared TLS rules cannot move through this patch. Multi-ingress rules cannot change ingress through this patch; edit each rule instead.'}
+        egress_group_id: {type: integer, format: int64, minimum: 0, nullable: true, description: 'Nonzero selects an explicitly authorized group and clears the single-node exit. Applies to every ingress of a multi-ingress rule.'}
+        egress_node_id: {type: integer, format: int64, minimum: 0, nullable: true, description: '0 explicitly selects direct forwarding; requires permission on every effective ingress. Applies to every ingress of a multi-ingress rule.'}
+        listen_port: {type: integer, minimum: 0, maximum: 65535, nullable: true, description: 'Shared by every ingress of a multi-ingress rule; must fit the common port-range intersection, 0 reallocates within it.'}
         balance: {type: string, enum: [random, round_robin, least_connections], nullable: true}
         proxy_accept_enabled: {type: boolean, nullable: true, description: 'False disables; true preserves an enabled mode or enables auto detection. Shared TLS listener reception remains administrator-managed. Enabling is TCP-only and requires administrator-configured trusted CIDRs.'}
         proxy_send_enabled: {type: boolean, nullable: true, description: 'False disables; true preserves the existing enabled version or enables v2. Enabling is TCP-only.'}
+    RuleEntryInput:
+      type: object
+      required: [node_id]
+      properties:
+        node_id: {type: integer, format: int64, minimum: 1, description: 'Ingress node; unique within a rule, at most 16 entries per rule'}
+        egress_node_id: {type: integer, format: int64, minimum: 0, default: 0, description: '0 means direct; mutually exclusive with nonzero egress_group_id'}
+        egress_group_id: {type: integer, format: int64, minimum: 0, default: 0, description: 'Authorized dynamic exit group; mutually exclusive with nonzero egress_node_id'}
     RuleInput:
       type: object
       required: [node_id, enabled]
       properties:
         protocol: {type: string, enum: [tcp, udp], default: tcp, description: 'Business protocol; UDP requires Agent protocol 16, raw_udp exits require udp only. Proxy Protocol is TCP-only.'}
         user_id: {type: integer, format: int64, description: Ignored; owner is session or admin-managed user}
-        node_id: {type: integer, format: int64}
+        node_id: {type: integer, format: int64, description: 'Primary ingress; mirrors the first entry. Supply entries for multi-ingress rules.'}
+        entries: {type: array, maxItems: 16, items: {$ref: '#/components/schemas/RuleEntryInput'}, description: 'Multi-ingress rows sharing one listen_port, each with its own egress. Multi-ingress rejects shared TLS inbound; the listen_port must fit every ingress port-range intersection.'}
         tls_inbound_id: {type: integer, format: int64, minimum: 0, default: 0, description: 'Shared TLS listener; requires TCP and Agent protocol 21; TLS stays end to end between client and target. Zero uses an ordinary rule port.'}
         sni_names: {type: array, maxItems: 32, items: {type: string}, description: 'Exact SNI domains; 1-32 required for shared TLS; names remain reserved when paused'}
         tls_alpn: {type: array, maxItems: 0, items: {type: string}, deprecated: true, description: 'Must be empty; shared listeners transparently preserve client-to-target ALPN negotiation'}
@@ -1577,7 +1586,7 @@ components:
         egress_node_id: {type: integer, format: int64, minimum: 0, default: 0, description: '0 means direct; other IDs must be linked to the ingress and allowed by the user plan'}
         name: {type: string, maxLength: 128, description: Defaults to first target if blank}
         group_id: {type: integer, format: int64, description: 0 means ungrouped; must belong to owner}
-        listen_port: {type: integer, minimum: 0, maximum: 65535, description: '0 or omitted allocates randomly for ordinary rules. Shared TLS ignores this field and uses its listener port.'}
+        listen_port: {type: integer, minimum: 0, maximum: 65535, description: '0 or omitted allocates randomly for ordinary rules within every selected ingress range intersection. Shared TLS ignores this field and uses its listener port.'}
         targets: {type: array, minItems: 1, maxItems: 32, items: {type: string}, description: 'host:port or [IPv6]:port; required unless legacy target_host/target_port supplied'}
         balance: {type: string, enum: [random, round_robin, least_connections], default: random}
         speed_mbps: {type: integer, enum: [0], default: 0, deprecated: true, description: 'Must be 0; runtime uses the user personal per-rule speed limit. Plans provide initial values; administrators may change user resources.'}

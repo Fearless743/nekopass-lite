@@ -1,5 +1,5 @@
 export type TunnelRandom = {cipher:string;key:string}
-export type RuleBatchPatch={node_id?:number;egress_node_id?:number;egress_group_id?:number;balance?:string;proxy_accept_enabled?:boolean;proxy_send_enabled?:boolean}
+export type RuleBatchPatch={node_id?:number;egress_node_id?:number;egress_group_id?:number;listen_port?:number;balance?:string;proxy_accept_enabled?:boolean;proxy_send_enabled?:boolean}
 export type OriginTLS={enabled:boolean;server_name:string;root_ca:string;alpn:string[]}
 export type SharedTLSConfig={name:string;port:number;enabled:boolean;proxy_accept:string;allowed_sni:string[];reject_empty_sni:boolean;unknown_sni_action:string;default_rule_id:number;max_handshakes:number;handshake_timeout_seconds:number}
 export type TLSInboundChoice={id:number;node_id:number;port:number;name:string;allowed_sni:string[]}
@@ -15,7 +15,8 @@ export type NodeGroupMember={node_id:number;role:string;weight:number}
 export type RuleEgressGroup={id:number;name:string;strategy:string;node_ids:number[]}
 export type NodeGroup = {members?:NodeGroupMember[];health_interval_seconds?:number;health_failures?:number;health_successes?:number; id: number; name: string; description: string; enabled: boolean; sort_order: number; strategy: string; node_ids: number[] }
 export type AdminDashboard={generated_at:string;timezone:string;range:'24h'|'7d'|'30d';unit:'bytes';stats:{users:number;new_users:number;nodes:number;enabled_nodes:number;online_nodes:number;offline_nodes:number;rules:number;connections:number;today_traffic:number};traffic:{at:number;bytes:number}[];nodes:{id:number;name:string;enabled:boolean;online:boolean}[]}
-export type RuleInput = { tls_inbound_id?:number;sni_names?:string[];tls_alpn?:string[];origin_tls?:OriginTLS; protocol?: 'tcp'|'udp'; egress_group_id?:number; egress_node_id: number; user_id: number; node_id: number; name: string; group_id: number; listen_port: number; targets: string[]; balance: string; speed_mbps: number; ip_limit: number; connection_limit: number; proxy_accept: string; proxy_send: string; proxy_trusted_cidrs: string[]; enabled: boolean }
+export type RuleEntry = { node_id: number; node_name?: string; egress_node_id?: number; egress_node_name?: string; egress_tunnel_protocol?: string; egress_group_id?: number; egress_group_name?: string }
+export type RuleInput = { tls_inbound_id?:number;sni_names?:string[];tls_alpn?:string[];origin_tls?:OriginTLS; protocol?: 'tcp'|'udp'; egress_group_id?:number; egress_node_id: number; user_id: number; node_id: number; entries?: RuleEntry[]; name: string; group_id: number; listen_port: number; targets: string[]; balance: string; speed_mbps: number; ip_limit: number; connection_limit: number; proxy_accept: string; proxy_send: string; proxy_trusted_cidrs: string[]; enabled: boolean }
 export type Rule = RuleInput & {egress_group_name?:string; egress_node_name: string; egress_tunnel_protocol?: string; id: number; username: string; node_name: string; public_address: string; traffic_bytes: number; status: string; sync_error: string; group_name: string; last_seen: string | null; applied_revision: number }
 export type Group = { id: number; user_id: number; name: string; rule_count: number }
 export class APIError extends Error {

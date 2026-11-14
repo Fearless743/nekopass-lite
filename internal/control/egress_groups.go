@@ -68,11 +68,15 @@ type groupRuleDraft struct {
 // Reuse the single-exit TLS/capability checks for every candidate. Draft rules
 // are removed before the control message leaves the server.
 func appendGroupDrafts(ctx context.Context, tx pgx.Tx, out *pb.ControlMessage) ([]groupRuleDraft, error) {
-	rules := map[int64]*pb.Rule{}
+	type ruleKey struct {
+		id      int64
+		ingress int64
+	}
+	rules := map[ruleKey]*pb.Rule{}
 	var ruleIDs, groupIDs []int64
 	for _, r := range out.Rules {
 		if r.EgressGroupId != 0 {
-			rules[r.Id] = r
+			rules[ruleKey{r.Id, r.IngressNodeId}] = r
 			ruleIDs = append(ruleIDs, r.Id)
 			groupIDs = append(groupIDs, r.EgressGroupId)
 		}
@@ -110,19 +114,19 @@ func appendGroupDrafts(ctx context.Context, tx pgx.Tx, out *pb.ControlMessage) (
 		r.HealthFailures = g.failures
 		r.HealthSuccesses = g.successes
 	}
-	rows, err = tx.Query(ctx, `SELECT o.rule_id,n.id,n.tunnel_public_host,n.tunnel_listen_port,l.token,n.tunnel_protocol,o.weight,o.role='standby' FROM rule_outbound_routes o JOIN rules r ON r.id=o.rule_id JOIN nodes n ON n.id=o.egress_node_id JOIN node_tunnel_links l ON l.ingress_node_id=r.node_id AND l.egress_node_id=n.id WHERE o.rule_id=ANY($1::bigint[]) AND n.protocol_version>=24 ORDER BY o.rule_id,n.id`, ruleIDs)
+	rows, err = tx.Query(ctx, `SELECT o.rule_id,o.ingress_node_id,n.id,n.tunnel_public_host,n.tunnel_listen_port,l.token,n.tunnel_protocol,o.weight,o.role='standby' FROM rule_outbound_routes o JOIN rules r ON r.id=o.rule_id JOIN nodes n ON n.id=o.egress_node_id JOIN node_tunnel_links l ON l.ingress_node_id=o.ingress_node_id AND l.egress_node_id=n.id WHERE o.rule_id=ANY($1::bigint[]) AND n.protocol_version>=24 ORDER BY o.rule_id,o.ingress_node_id,n.id`, ruleIDs)
 	if err != nil {
 		return nil, err
 	}
 	var drafts []groupRuleDraft
 	for rows.Next() {
-		var id int64
+		var id, ingress int64
 		var candidate pb.EgressPeer
-		if err = rows.Scan(&id, &candidate.NodeId, &candidate.Host, &candidate.Port, &candidate.Token, &candidate.Protocol, &candidate.Weight, &candidate.Standby); err != nil {
+		if err = rows.Scan(&id, &ingress, &candidate.NodeId, &candidate.Host, &candidate.Port, &candidate.Token, &candidate.Protocol, &candidate.Weight, &candidate.Standby); err != nil {
 			rows.Close()
 			return nil, err
 		}
-		r := rules[id]
+		r := rules[ruleKey{id, ingress}]
 		if r == nil || candidate.Host == "" || candidate.Port == 0 || candidate.Token == "" {
 			continue
 		}

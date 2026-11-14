@@ -22,7 +22,7 @@ SERVICE = 'nekopass-panel-freshfix'
 DIRECTORIES = [pathlib.Path('/opt') / SERVICE, pathlib.Path('/etc') / SERVICE,
                pathlib.Path('/var/lib') / SERVICE,
                pathlib.Path('/etc/systemd/system') / (SERVICE + '.service.d')]
-UNITS = [SERVICE + '.service', SERVICE + '-update.service', SERVICE + '-update.path']
+UNITS = [SERVICE + '.service']
 
 
 def run(args, **kwargs):
@@ -84,9 +84,8 @@ def main():
             assert 'could not change directory' not in result.stderr
             password = re.search(r'管理员密码：([^\r\n]+)', result.stdout)
             assert password and len(password[1]) == 32
-            for unit in [SERVICE, SERVICE + '-update.path']:
-                run(['systemctl', 'is-active', '--quiet', unit])
-                assert subprocess.check_output(['systemctl', 'is-enabled', unit], text=True).strip() == 'enabled'
+            run(['systemctl', 'is-active', '--quiet', SERVICE])
+            assert subprocess.check_output(['systemctl', 'is-enabled', SERVICE], text=True).strip() == 'enabled'
             opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
             base = 'http://127.0.0.1:' + str(http_port)
 

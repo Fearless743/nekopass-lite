@@ -185,6 +185,17 @@ CREATE TABLE IF NOT EXISTS rules (
 CREATE INDEX IF NOT EXISTS rules_egress_node_id ON rules(egress_node_id);
 CREATE INDEX IF NOT EXISTS rules_egress_group ON rules(egress_group_id) WHERE egress_group_id IS NOT NULL;
 
+CREATE TABLE IF NOT EXISTS rule_entries (
+ id bigserial PRIMARY KEY, rule_id bigint NOT NULL REFERENCES rules(id) ON DELETE CASCADE,
+ node_id bigint NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
+ egress_node_id bigint REFERENCES nodes(id) ON DELETE SET NULL,
+ egress_group_id bigint REFERENCES node_groups(id) ON DELETE SET NULL,
+ UNIQUE(rule_id,node_id),
+ CHECK(egress_node_id IS NULL OR egress_group_id IS NULL)
+);
+CREATE INDEX IF NOT EXISTS rule_entries_node ON rule_entries(node_id);
+CREATE INDEX IF NOT EXISTS rule_entries_egress_node ON rule_entries(egress_node_id);
+CREATE INDEX IF NOT EXISTS rule_entries_egress_group ON rule_entries(egress_group_id) WHERE egress_group_id IS NOT NULL;
 CREATE TABLE IF NOT EXISTS rule_ports (
  node_id bigint NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
  protocol text NOT NULL CHECK(protocol IN ('tcp','udp')),
@@ -201,16 +212,55 @@ CREATE TABLE IF NOT EXISTS rule_sni_names (
  PRIMARY KEY(tls_inbound_id,name)
 );
 
+CREATE FUNCTION sync_rule_ports(p_rule_id bigint) RETURNS void LANGUAGE plpgsql AS $$
+DECLARE
+ v_protocol text; v_port integer; v_tls bigint;
+BEGIN
+ SELECT protocol,listen_port,tls_inbound_id INTO v_protocol,v_port,v_tls FROM rules WHERE id=p_rule_id;
+ IF NOT FOUND THEN RETURN; END IF;
+ DELETE FROM rule_ports WHERE rule_id=p_rule_id;
+ IF v_tls IS NULL THEN
+  IF EXISTS(SELECT 1 FROM rule_entries WHERE rule_id=p_rule_id) THEN
+   INSERT INTO rule_ports(node_id,protocol,listen_port,rule_id)
+   SELECT e.node_id,v_protocol,v_port,p_rule_id FROM rule_entries e WHERE e.rule_id=p_rule_id;
+  ELSE
+   INSERT INTO rule_ports(node_id,protocol,listen_port,rule_id)
+   SELECT node_id,v_protocol,v_port,p_rule_id FROM rules WHERE id=p_rule_id;
+  END IF;
+ END IF;
+END $$;
 CREATE FUNCTION reserve_rule_ports() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
- DELETE FROM rule_ports WHERE rule_id=NEW.id;
- IF NEW.tls_inbound_id IS NULL THEN
-  INSERT INTO rule_ports(node_id,protocol,listen_port,rule_id) VALUES(NEW.node_id,NEW.protocol,NEW.listen_port,NEW.id);
- END IF;
+ PERFORM sync_rule_ports(NEW.id);
  RETURN NEW;
 END $$;
 DROP TRIGGER IF EXISTS reserve_rule_ports ON rules;
 CREATE TRIGGER reserve_rule_ports AFTER INSERT OR UPDATE OF node_id,listen_port,protocol,tls_inbound_id ON rules FOR EACH ROW EXECUTE FUNCTION reserve_rule_ports();
+CREATE FUNCTION reserve_entry_ports() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+ IF TG_OP='DELETE' THEN
+  PERFORM sync_rule_ports(OLD.rule_id);
+  RETURN OLD;
+ ELSE
+  PERFORM sync_rule_ports(NEW.rule_id);
+  RETURN NEW;
+ END IF;
+END $$;
+DROP TRIGGER IF EXISTS reserve_entry_ports_ins ON rule_entries;
+DROP TRIGGER IF EXISTS reserve_entry_ports_upd ON rule_entries;
+DROP TRIGGER IF EXISTS reserve_entry_ports_del ON rule_entries;
+CREATE TRIGGER reserve_entry_ports_ins AFTER INSERT ON rule_entries FOR EACH ROW EXECUTE FUNCTION reserve_entry_ports();
+CREATE TRIGGER reserve_entry_ports_upd AFTER UPDATE OF node_id ON rule_entries FOR EACH ROW EXECUTE FUNCTION reserve_entry_ports();
+CREATE TRIGGER reserve_entry_ports_del AFTER DELETE ON rule_entries FOR EACH ROW EXECUTE FUNCTION reserve_entry_ports();
+CREATE FUNCTION ensure_rule_entry() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+ INSERT INTO rule_entries(rule_id,node_id,egress_node_id,egress_group_id)
+ VALUES(NEW.id,NEW.node_id,NEW.egress_node_id,NEW.egress_group_id)
+ ON CONFLICT(rule_id,node_id) DO NOTHING;
+ RETURN NEW;
+END $$;
+DROP TRIGGER IF EXISTS ensure_rule_entry ON rules;
+CREATE TRIGGER ensure_rule_entry AFTER INSERT ON rules FOR EACH ROW EXECUTE FUNCTION ensure_rule_entry();
 CREATE FUNCTION reserve_tls_inbound_port() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
  DELETE FROM rule_ports WHERE tls_inbound_id=NEW.id;
@@ -304,18 +354,18 @@ CREATE VIEW user_nodes AS
  JOIN nodes n ON n.id=m.node_id AND n.enabled
  WHERE u.enabled AND (u.expires_at IS NULL OR u.expires_at>now());
 CREATE VIEW rule_outbound_routes AS
- SELECT r.id AS rule_id,n.id AS egress_node_id,1 AS weight,'active'::text AS role
- FROM rules r JOIN nodes n ON n.id=r.egress_node_id AND n.enabled AND n.tunnel_exit_enabled
- JOIN node_tunnel_links l ON l.ingress_node_id=r.node_id AND l.egress_node_id=n.id
+ SELECT r.id AS rule_id,e.node_id AS ingress_node_id,n.id AS egress_node_id,1 AS weight,'active'::text AS role
+ FROM rules r JOIN rule_entries e ON e.rule_id=r.id JOIN nodes n ON n.id=e.egress_node_id AND n.enabled AND n.tunnel_exit_enabled
+ JOIN node_tunnel_links l ON l.ingress_node_id=e.node_id AND l.egress_node_id=n.id
  JOIN user_nodes a ON a.user_id=r.user_id AND a.node_id=n.id
- WHERE n.id<>r.node_id AND (r.protocol='udp' OR n.tunnel_protocol NOT IN ('plain_udp','dtls_udp','random_udp'))
+ WHERE n.id<>e.node_id AND (r.protocol='udp' OR n.tunnel_protocol NOT IN ('plain_udp','dtls_udp','random_udp'))
  UNION ALL
- SELECT r.id,n.id,m.weight,m.role
- FROM rules r JOIN user_node_groups ug ON ug.user_id=r.user_id AND ug.group_id=r.egress_group_id
+ SELECT r.id,e.node_id,n.id,m.weight,m.role
+ FROM rules r JOIN rule_entries e ON e.rule_id=r.id JOIN user_node_groups ug ON ug.user_id=r.user_id AND ug.group_id=e.egress_group_id
  JOIN node_groups g ON g.id=ug.group_id AND g.enabled
  JOIN node_group_members m ON m.group_id=g.id AND m.role<>'disabled'
- JOIN nodes n ON n.id=m.node_id AND n.enabled AND n.tunnel_exit_enabled AND n.id<>r.node_id
- JOIN node_tunnel_links l ON l.ingress_node_id=r.node_id AND l.egress_node_id=n.id
+ JOIN nodes n ON n.id=m.node_id AND n.enabled AND n.tunnel_exit_enabled AND n.id<>e.node_id
+ JOIN node_tunnel_links l ON l.ingress_node_id=e.node_id AND l.egress_node_id=n.id
  JOIN user_nodes a ON a.user_id=r.user_id AND a.node_id=n.id
  WHERE r.protocol='udp' OR n.tunnel_protocol NOT IN ('plain_udp','dtls_udp','random_udp');
 

@@ -112,7 +112,7 @@ func (s *StreamServer) exchangeWithCredential(ctx context.Context, conn interfac
 	}
 	if r.ProtocolVersion > 0 && r.ProtocolVersion < 6 {
 		var requiresTunnel bool
-		e = tx.QueryRow(ctx, `SELECT n.tunnel_exit_enabled OR EXISTS(SELECT 1 FROM rules WHERE node_id=$1 AND egress_node_id IS NOT NULL) FROM nodes n WHERE n.id=$1`, nodeID).Scan(&requiresTunnel)
+		e = tx.QueryRow(ctx, `SELECT n.tunnel_exit_enabled OR EXISTS(SELECT 1 FROM rule_entries WHERE node_id=$1 AND egress_node_id IS NOT NULL) FROM nodes n WHERE n.id=$1`, nodeID).Scan(&requiresTunnel)
 		if e != nil {
 			return nil, e
 		}
@@ -122,7 +122,7 @@ func (s *StreamServer) exchangeWithCredential(ctx context.Context, conn interfac
 	}
 	if r.ProtocolVersion > 0 && r.ProtocolVersion < 7 {
 		var requiresTLS bool
-		e = tx.QueryRow(ctx, `SELECT (n.tunnel_exit_enabled AND n.tunnel_protocol='tls_h2') OR EXISTS(SELECT 1 FROM rules r JOIN nodes exit ON exit.id=r.egress_node_id WHERE r.node_id=$1 AND exit.tunnel_protocol='tls_h2') FROM nodes n WHERE n.id=$1`, nodeID).Scan(&requiresTLS)
+		e = tx.QueryRow(ctx, `SELECT (n.tunnel_exit_enabled AND n.tunnel_protocol='tls_h2') OR EXISTS(SELECT 1 FROM rule_entries e JOIN nodes exit ON exit.id=e.egress_node_id WHERE e.node_id=$1 AND exit.tunnel_protocol='tls_h2') FROM nodes n WHERE n.id=$1`, nodeID).Scan(&requiresTLS)
 		if e != nil {
 			return nil, e
 		}
@@ -314,7 +314,7 @@ func (s *StreamServer) exchangeWithCredential(ctx context.Context, conn interfac
 	rows, e = tx.Query(ctx, `SELECT r.id,r.user_id,nn.listen_host,r.listen_port,r.target_host,r.target_port,r.enabled,r.targets,r.balance,
  COALESCE(LEAST(NULLIF(r.speed_mbps*125000,0),NULLIF(u.rule_speed_bps,0)),0),
  COALESCE(LEAST(NULLIF(r.ip_limit,0),NULLIF(u.rule_ip_limit,0)),0),
-	 COALESCE(LEAST(NULLIF(r.connection_limit,0),NULLIF(u.rule_connection_limit,0)),0),r.proxy_accept,r.proxy_send,r.proxy_trusted_cidrs,COALESCE(r.egress_node_id,0),COALESCE(en.tunnel_public_host,''),COALESCE(en.tunnel_listen_port,0),COALESCE(l.token,''),COALESCE(en.tunnel_protocol,''),u.quota_epoch,r.protocol,COALESCE(r.tls_inbound_id,0),r.sni_names,r.tls_alpn,r.origin_tls,COALESCE(r.egress_group_id,0) FROM rules r JOIN nodes nn ON nn.id=r.node_id JOIN user_entitlements u ON u.id=r.user_id JOIN user_nodes n ON n.user_id=r.user_id AND n.node_id=r.node_id LEFT JOIN nodes en ON en.id=r.egress_node_id AND en.enabled AND en.tunnel_exit_enabled LEFT JOIN node_tunnel_links l ON l.ingress_node_id=r.node_id AND l.egress_node_id=r.egress_node_id WHERE r.node_id=$1 AND nn.ingress_enabled ORDER BY r.id`, nodeID)
+	 COALESCE(LEAST(NULLIF(r.connection_limit,0),NULLIF(u.rule_connection_limit,0)),0),r.proxy_accept,r.proxy_send,r.proxy_trusted_cidrs,COALESCE(e.egress_node_id,0),COALESCE(en.tunnel_public_host,''),COALESCE(en.tunnel_listen_port,0),COALESCE(l.token,''),COALESCE(en.tunnel_protocol,''),u.quota_epoch,r.protocol,COALESCE(r.tls_inbound_id,0),r.sni_names,r.tls_alpn,r.origin_tls,COALESCE(e.egress_group_id,0) FROM rules r JOIN rule_entries e ON e.rule_id=r.id AND e.node_id=$1 JOIN nodes nn ON nn.id=e.node_id JOIN user_entitlements u ON u.id=r.user_id JOIN user_nodes n ON n.user_id=r.user_id AND n.node_id=e.node_id LEFT JOIN nodes en ON en.id=e.egress_node_id AND en.enabled AND en.tunnel_exit_enabled LEFT JOIN node_tunnel_links l ON l.ingress_node_id=e.node_id AND l.egress_node_id=e.egress_node_id WHERE nn.ingress_enabled ORDER BY r.id`, nodeID)
 	if e != nil {
 		return nil, e
 	}
@@ -389,7 +389,7 @@ func (s *StreamServer) exchangeWithCredential(ctx context.Context, conn interfac
 		if e != nil {
 			return nil, e
 		}
-		rows, e = tx.Query(ctx, `SELECT r.id,r.node_id,r.targets,r.user_id,u.quota_epoch,COALESCE(extract(epoch FROM u.expires_at)::bigint,0),r.protocol FROM rules r JOIN user_entitlements u ON u.id=r.user_id JOIN user_nodes ingress ON ingress.user_id=r.user_id AND ingress.node_id=r.node_id JOIN rule_outbound_routes outbound ON outbound.rule_id=r.id WHERE outbound.egress_node_id=$1 AND EXISTS(SELECT 1 FROM nodes source WHERE source.id=r.node_id AND source.ingress_enabled) AND r.enabled AND u.enabled AND (u.expires_at IS NULL OR u.expires_at>now()) ORDER BY r.id`, nodeID)
+		rows, e = tx.Query(ctx, `SELECT r.id,e.node_id,r.targets,r.user_id,u.quota_epoch,COALESCE(extract(epoch FROM u.expires_at)::bigint,0),r.protocol FROM rules r JOIN rule_entries e ON e.rule_id=r.id JOIN user_entitlements u ON u.id=r.user_id JOIN user_nodes ingress ON ingress.user_id=r.user_id AND ingress.node_id=e.node_id JOIN rule_outbound_routes outbound ON outbound.rule_id=r.id AND outbound.ingress_node_id=e.node_id WHERE outbound.egress_node_id=$1 AND EXISTS(SELECT 1 FROM nodes source WHERE source.id=e.node_id AND source.ingress_enabled) AND r.enabled AND u.enabled AND (u.expires_at IS NULL OR u.expires_at>now()) ORDER BY r.id`, nodeID)
 		if e != nil {
 			return nil, e
 		}

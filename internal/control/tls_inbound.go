@@ -307,14 +307,19 @@ func appendTLSInboundControl(ctx context.Context, tx pgx.Tx, node int64, out *pb
 	return rows.Err()
 }
 func validateTLSRule(ctx context.Context, tx pgx.Tx, in *RuleInput, id int64) error {
-	var only bool
-	if err := tx.QueryRow(ctx, "SELECT tls_inbound_only FROM nodes WHERE id=$1", in.NodeID).Scan(&only); err != nil {
-		return err
+	if len(in.Entries) > 1 && in.TLSInboundID != 0 {
+		return errors.New("多入口规则不支持共享 TLS 入站")
 	}
-	if in.TLSInboundID == 0 {
-		if only && in.Protocol == "tcp" {
+	for _, e := range in.Entries {
+		var only bool
+		if err := tx.QueryRow(ctx, "SELECT tls_inbound_only FROM nodes WHERE id=$1", e.NodeID).Scan(&only); err != nil {
+			return err
+		}
+		if in.TLSInboundID == 0 && only && in.Protocol == "tcp" {
 			return errors.New("此入口仅允许共享 TLS 入站规则")
 		}
+	}
+	if in.TLSInboundID == 0 {
 		return nil
 	}
 	var raw []byte
@@ -340,6 +345,6 @@ func touchTLSInboundNode(ctx context.Context, tx pgx.Tx, node int64) error {
 	if _, err := tx.Exec(ctx, "UPDATE nodes SET config_revision=(SELECT value+1 FROM revision WHERE id=1) WHERE id=$1", node); err != nil {
 		return err
 	}
-	_, err := tx.Exec(ctx, "UPDATE rules SET config_revision=(SELECT value+1 FROM revision WHERE id=1) WHERE node_id=$1", node)
+	_, err := tx.Exec(ctx, "UPDATE rules SET config_revision=(SELECT value+1 FROM revision WHERE id=1) WHERE id IN (SELECT rule_id FROM rule_entries WHERE node_id=$1)", node)
 	return err
 }
