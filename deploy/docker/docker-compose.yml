@@ -18,13 +18,19 @@ services:
 
   nekopass:
     image: ${NEKOPASS_IMAGE:-ghcr.io/fearless743/nekopass-lite:latest}
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+      args:
+        VERSION: ${NEKOPASS_VERSION:-dev}
     restart: unless-stopped
     depends_on:
       postgres:
         condition: service_healthy
     ports:
-      # The only published port: panel UI and agent gRPC share it.
-      - '${NEKOPASS_PUBLIC_PORT:-443}:443'
+      # Caddy serves plain HTTP on 80; TLS is terminated by the upstream
+      # reverse proxy. Only this port is published.
+      - '${NEKOPASS_HTTP_PORT:-80}:80'
     environment:
       NEKOPASS_DATABASE_URL: postgres://nekopass:${POSTGRES_PASSWORD}@postgres:5432/nekopass?sslmode=disable
       # Caddy runs in the same container, so it reaches the panel over loopback.

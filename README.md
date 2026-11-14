@@ -61,7 +61,7 @@ wget https://github.com/hajidishu/nekopass/releases/latest/download/install-pane
 
 ## Docker 部署
 
-仓库通过 GitHub Actions 构建面板镜像并发布到 GHCR：`ghcr.io/fearless743/nekopass-lite`（linux/amd64、linux/arm64）。镜像已内嵌 Caddy，单个容器同时提供面板网页（8080）与节点控制端口（9443），对外只暴露一个 HTTPS 端口：`/nekopass.v1.Control/*` 走节点 gRPC，其余请求走面板网页。
+仓库通过 GitHub Actions 构建面板镜像并发布到 GHCR：`ghcr.io/fearless743/nekopass-lite`（linux/amd64、linux/arm64）。镜像已内嵌 Caddy，单个容器同时提供面板网页（8080）与节点控制端口（9443），Caddy 仅监听 80 端口（纯 HTTP），TLS 由上游反代终止；`/nekopass.v1.Control/*` 走节点 gRPC，其余请求走面板网页。
 
 ```bash
 git clone https://github.com/Fearless743/nekopass-lite.git
@@ -92,9 +92,9 @@ echo "$GHCR_TOKEN" | docker login ghcr.io -u <GitHub 用户名> --password-stdin
 | `NEKOPASS_ADMIN_PASSWORD` | 可选，指定初始管理员密码；留空则随机生成 |
 | `NEKOPASS_IMAGE` | 使用的镜像，默认 `ghcr.io/fearless743/nekopass-lite:latest` |
 
-- 面板的 `8080`、`9443` 只在容器内网监听，不对外发布；外部只有 Caddy 的单个 HTTPS 端口。
-- 自动签发证书依赖 443/tcp 的 TLS-ALPN 校验，`NEKOPASS_PUBLIC_PORT` 应保持 `443`；如需其他端口，请在镜像的 `/etc/caddy/Caddyfile` 中改用 DNS 校验或手动证书。
-- 节点通过 `https://域名:443` 连接，证书必须是系统信任的公共 CA 证书；Caddy 的 `tls internal` 自签证书不会被节点接受。
+- 面板的 `8080`、`9443` 只在容器内网监听；Caddy 对外仅暴露 80 端口（纯 HTTP），TLS 由上游反代处理。
+- Caddy 不申请证书；请在上游反代处配置 TLS 证书。`NEKOPASS_PUBLIC_PORT` 应设为上游反代对外提供的 HTTPS 端口（默认 `443`）。
+- 节点通过上游反代的 HTTPS 端口连接（默认 `https://域名:443`），证书必须是系统信任的公共 CA 证书。
 - 升级：`docker compose pull && docker compose up -d`。数据保存在 `postgres-data` 卷中。容器内不支持面板“在线更新”，请用镜像升级代替。
 - 重置管理员密码：`docker compose exec nekopass /opt/nekopass/bin/nekopass -mode reset-admin`（存在多个管理员时追加 `-admin-name <账号>`）。
 - 首次启动后如需更换域名或端口，请在后台「系统设置」中修改 Agent 地址；环境变量只在创建初始设置时生效。

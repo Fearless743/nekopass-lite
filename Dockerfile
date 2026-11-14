@@ -48,7 +48,7 @@ ENV NEKOPASS_UPSTREAM=127.0.0.1:8080
 ENV NEKOPASS_AGENT_UPSTREAM=127.0.0.1:9443
 ENV NEKOPASS_TRUSTED_PROXIES=127.0.0.0/8
 
-EXPOSE 80 443
+EXPOSE 80
 WORKDIR /var/lib/nekopass
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
     CMD wget -q -O /dev/null http://127.0.0.1:8080/healthz || exit 1
