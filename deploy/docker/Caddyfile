@@ -1,0 +1,23 @@
+{
+	# The admin API is not needed outside the container.
+	admin 127.0.0.1:2019
+}
+
+# One public HTTPS port for both the panel (8080) and the agent control
+# endpoint (9443). Caddy terminates TLS and routes by HTTP/2 path:
+#   /nekopass.v1.Control/*  -> h2c backend on 9443
+#   everything else         -> panel HTTP on 8080
+{$NEKOPASS_DOMAIN:localhost} {
+	@agent path /nekopass.v1.Control/*
+	handle @agent {
+		reverse_proxy {$NEKOPASS_AGENT_UPSTREAM:127.0.0.1:9443} {
+			transport http {
+				versions h2c
+			}
+		}
+	}
+
+	handle {
+		reverse_proxy {$NEKOPASS_UPSTREAM:127.0.0.1:8080}
+	}
+}

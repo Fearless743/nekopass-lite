@@ -1,0 +1,17 @@
+.git
+.gitignore
+.githooks
+.github
+.local
+.tools
+dist
+docs
+web/node_modules
+web/dist
+**/node_modules
+**/*.log
+**/*.db
+**/*.db-*
+**/.env
+**/.env.*
+!**/*.env.example

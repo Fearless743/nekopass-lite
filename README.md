@@ -61,7 +61,7 @@ wget https://github.com/hajidishu/nekopass/releases/latest/download/install-pane
 
 ## Docker 部署
 
-仓库通过 GitHub Actions 构建面板镜像并发布到 GHCR：`ghcr.io/fearless743/nekopass-lite`（linux/amd64、linux/arm64）。部署时使用 Caddy 作为唯一入口，把面板网页（8080）和节点控制端口（9443）合并到同一个 HTTPS 端口：`/nekopass.v1.Control/*` 走节点 gRPC，其余请求走面板网页。
+仓库通过 GitHub Actions 构建面板镜像并发布到 GHCR：`ghcr.io/fearless743/nekopass-lite`（linux/amd64、linux/arm64）。镜像已内嵌 Caddy，单个容器同时提供面板网页（8080）与节点控制端口（9443），对外只暴露一个 HTTPS 端口：`/nekopass.v1.Control/*` 走节点 gRPC，其余请求走面板网页。
 
 ```bash
 git clone https://github.com/Fearless743/nekopass-lite.git
@@ -79,25 +79,25 @@ GHCR 包默认是私有的。可以直接把包设为 Public，或先登录再�
 echo "$GHCR_TOKEN" | docker login ghcr.io -u <GitHub 用户名> --password-stdin
 ```
 
+镜像尚未发布时，可改用 `docker compose up -d --build` 在本机构建。
+
 首次启动会自动执行数据库迁移、创建管理员（账号 `admin`，密码随机生成且只打印一次），并把面板地址和节点地址初始化为 `https://<NEKOPASS_DOMAIN>:<NEKOPASS_PUBLIC_PORT>`。因此生成的节点安装命令会直接使用同一个公网端口。
 
 | 变量 | 说明 |
 | --- | --- |
 | `NEKOPASS_DOMAIN` | 公网域名，Caddy 自动申请并续期证书 |
 | `NEKOPASS_PUBLIC_PORT` | 唯一对外端口，默认 `443` |
-| `NEKOPASS_TRUSTED_PROXIES` | 允许提供 `X-Forwarded-*` 的代理网段，须与 compose 内部网段一致，默认 `172.28.0.0/24` |
+| `NEKOPASS_TRUSTED_PROXIES` | 允许提供 `X-Forwarded-*` 的代理网段；Caddy 与面板同容器，固定为 `127.0.0.0/8` |
 | `POSTGRES_PASSWORD` | 数据库密码，仅使用字母、数字、`-`、`_` |
 | `NEKOPASS_ADMIN_PASSWORD` | 可选，指定初始管理员密码；留空则随机生成 |
 | `NEKOPASS_IMAGE` | 使用的镜像，默认 `ghcr.io/fearless743/nekopass-lite:latest` |
 
 - 面板的 `8080`、`9443` 只在容器内网监听，不对外发布；外部只有 Caddy 的单个 HTTPS 端口。
-- 自动签发证书依赖 443/tcp 的 TLS-ALPN 校验，`NEKOPASS_PUBLIC_PORT` 应保持 `443`；如需其他端口，请在 `deploy/docker/Caddyfile` 中改用 DNS 校验或手动证书。
+- 自动签发证书依赖 443/tcp 的 TLS-ALPN 校验，`NEKOPASS_PUBLIC_PORT` 应保持 `443`；如需其他端口，请在镜像的 `/etc/caddy/Caddyfile` 中改用 DNS 校验或手动证书。
 - 节点通过 `https://域名:443` 连接，证书必须是系统信任的公共 CA 证书；Caddy 的 `tls internal` 自签证书不会被节点接受。
-- 升级：`docker compose pull && docker compose up -d`。数据保存在 `postgres-data`、`nekopass-data`、`caddy-data` 卷中。容器内不支持面板“在线更新”，请用镜像升级代替。
-- 镜像尚未发布时，可改用 `docker compose up -d --build` 在本机构建。
-- 首次启动后如需更换域名或端口，请在后台「系统设置」中修改 Agent 地址；环境变量只在创建初始设置时生效。
+- 升级：`docker compose pull && docker compose up -d`。数据保存在 `postgres-data` 卷中。容器内不支持面板“在线更新”，请用镜像升级代替。
 - 重置管理员密码：`docker compose exec nekopass /opt/nekopass/bin/nekopass -mode reset-admin`（存在多个管理员时追加 `-admin-name <账号>`）。
-- 不使用 Compose 时，可直接运行镜像，并按 `deploy/docker/Caddyfile` 的规则自行配置反向代理。
+- 首次启动后如需更换域名或端口，请在后台「系统设置」中修改 Agent 地址；环境变量只在创建初始设置时生效。
 - 节点仍使用上面的安装脚本部署，不需要拉取镜像；镜像只包含面板。
 
 ## 服务管理

@@ -1,0 +1,40 @@
+name: nekopass
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: nekopass
+      POSTGRES_USER: nekopass
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U nekopass -d nekopass']
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  nekopass:
+    image: ${NEKOPASS_IMAGE:-ghcr.io/fearless743/nekopass-lite:latest}
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      # The only published port: panel UI and agent gRPC share it.
+      - '${NEKOPASS_PUBLIC_PORT:-443}:443'
+    environment:
+      NEKOPASS_DATABASE_URL: postgres://nekopass:${POSTGRES_PASSWORD}@postgres:5432/nekopass?sslmode=disable
+      # Caddy runs in the same container, so it reaches the panel over loopback.
+      NEKOPASS_TRUSTED_PROXIES: ${NEKOPASS_TRUSTED_PROXIES:-127.0.0.0/8}
+      NEKOPASS_PANEL_UPDATE_DIR: /var/lib/nekopass
+      # Used once, when the initial administrator is created.
+      NEKOPASS_PUBLIC_HOST: ${NEKOPASS_DOMAIN:-}
+      NEKOPASS_PUBLIC_PORT: ${NEKOPASS_PUBLIC_PORT:-443}
+      NEKOPASS_ADMIN_USERNAME: ${NEKOPASS_ADMIN_USERNAME:-admin}
+      # Empty means a random password is generated and printed once in the logs.
+      NEKOPASS_ADMIN_PASSWORD: ${NEKOPASS_ADMIN_PASSWORD:-}
+volumes:
+  postgres-data:
