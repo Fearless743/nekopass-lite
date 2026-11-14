@@ -71,24 +71,17 @@ jobs:
           npm --prefix web ci
           npm --prefix web test
           npm --prefix web audit --audit-level=low
-      - name: Build native Linux amd64 and arm64 packages
+      - name: Build agent Linux amd64 and arm64 binaries
         shell: pwsh
-        run: ./scripts/package-panel.ps1 -Version $env:RELEASE_TAG
-      - name: Test fresh native panel installation
-        run: |
-          sudo python3 tests/panel_fresh_install_e2e.py \
-            --installer dist/oss/nekopass/install-panel.sh \
-            --package "dist/oss/nekopass/releases/$RELEASE_TAG/nekopass-panel-linux-amd64.tar.gz"
+        run: ./scripts/package-agent.ps1 -Version $env:RELEASE_TAG
       - name: Create draft, upload assets and publish
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --draft --title "Nekopass $RELEASE_TAG" --generate-notes
           gh release upload "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
-            dist/oss/nekopass/releases/"$RELEASE_TAG"/nekopass-panel-linux-amd64.tar.gz \
-            dist/oss/nekopass/releases/"$RELEASE_TAG"/nekopass-panel-linux-arm64.tar.gz \
             dist/oss/nekopass/releases/"$RELEASE_TAG"/nekopass-agent-linux-amd64 \
             dist/oss/nekopass/releases/"$RELEASE_TAG"/nekopass-agent-linux-arm64 \
-            dist/oss/nekopass/install-panel.sh dist/oss/nekopass/install-agent.sh \
+            dist/oss/nekopass/install-agent.sh \
             dist/oss/nekopass/nekopassctl.sh
           gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft=false --latest

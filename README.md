@@ -141,12 +141,13 @@ go build -o dist/bin/nekopass-agent ./cmd/nekopass-agent
 
 前端输出到 `web/dist/`，二进制输出到 `dist/bin/`，目标平台默认为当前系统。
 
-打包 Linux amd64 / arm64 发布文件，需要 PowerShell 7，任选其一：
+打包 Linux amd64 / arm64 发布文件，需要 PowerShell 7：
 
 ```bash
-pwsh -File scripts/package-panel.ps1  # 面板和节点完整发布包
 pwsh -File scripts/package-agent.ps1  # 仅节点发布文件
 ```
+
+面板改为 Docker 部署，不再发布原生面板二进制包。
 
 产物位于 `dist/oss/nekopass/`，可用 `-Version v0.19.3` 指定版本号。
 
