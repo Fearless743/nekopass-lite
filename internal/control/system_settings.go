@@ -15,24 +15,11 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/nekopass/nekopass/internal/networkpolicy"
-	"github.com/nekopass/nekopass/internal/registration"
 	"github.com/nekopass/nekopass/internal/release"
 	"github.com/nekopass/nekopass/internal/store"
-	"github.com/nekopass/nekopass/internal/telegram"
 )
 
 type SystemSettings struct {
-	Telegram                      telegram.Config   `json:"telegram"`
-	ForceInvite                   bool              `json:"force_invite"`
-	TermsURL                      string            `json:"terms_url"`
-	PrivacyURL                    string            `json:"privacy_url"`
-	RegistrationEmailVerification bool              `json:"registration_email_verification"`
-	RegistrationEnabled           bool              `json:"registration_enabled"`
-	CaptchaMode                   string            `json:"captcha_mode"`
-	SMTP                          registration.SMTP `json:"smtp"`
-	ReferralEnabled               bool              `json:"referral_enabled"`
-	ReferralMode                  string            `json:"referral_mode"`
-	ReferralRate                  string            `json:"referral_rate"`
 	ProxyTrustedCIDRs             []string          `json:"proxy_trusted_cidrs"`
 	TargetDenyCIDRs               []string          `json:"target_deny_cidrs"`
 	SiteName                      string            `json:"site_name"`
@@ -47,7 +34,7 @@ type SystemSettings struct {
 }
 
 func defaultSettings() SystemSettings {
-	return SystemSettings{Telegram: telegram.DefaultConfig(), RegistrationEmailVerification: true, CaptchaMode: "image", SMTP: registration.SMTP{Port: 587, Security: "starttls"}, ReferralMode: "first", ReferralRate: "15", ProxyTrustedCIDRs: []string{}, TargetDenyCIDRs: networkpolicy.Defaults(), SiteName: "Nekopass", AgentPort: 9443, AgentTransport: "tls", AgentVersion: "latest", InstallerURL: release.LatestBase + "/install-agent.sh", ReleaseBaseURL: release.DownloadBase, InstallTokenMinutes: 30}
+	return SystemSettings{ProxyTrustedCIDRs: []string{}, TargetDenyCIDRs: networkpolicy.Defaults(), SiteName: "Nekopass", AgentPort: 9443, AgentTransport: "tls", AgentVersion: "latest", InstallerURL: release.LatestBase + "/install-agent.sh", ReleaseBaseURL: release.DownloadBase, InstallTokenMinutes: 30}
 }
 func (s *Server) readSettings(ctx context.Context) (SystemSettings, error) {
 	return readSystemSettings(ctx, s.Pool)
@@ -57,7 +44,7 @@ func readSystemSettings(ctx context.Context, query interface {
 }) (SystemSettings, error) {
 	v := defaultSettings()
 	var data []byte
-	e := query.QueryRow(ctx, "SELECT config,telegram_generation FROM site_settings WHERE id=1").Scan(&data, &v.Telegram.Generation)
+	e := query.QueryRow(ctx, "SELECT config FROM site_settings WHERE id=1").Scan(&data)
 	if e != nil {
 		return v, e
 	}
@@ -79,29 +66,6 @@ func httpsURL(raw string, originOnly bool) bool {
 var releaseVersion = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
 
 func validateSettings(v SystemSettings) error {
-	if err := v.Telegram.Normalize(); err != nil {
-		return err
-	}
-	if v.ForceInvite && !v.ReferralEnabled {
-		return errors.New("开启强制邀请前须启用邀请返利")
-	}
-	for _, raw := range []string{v.TermsURL, v.PrivacyURL} {
-		if raw != "" && !legalURL(raw) {
-			return errors.New("条款地址须为有效 HTTP 或 HTTPS URL")
-		}
-	}
-	if v.CaptchaMode != "off" && v.CaptchaMode != "image" {
-		return errors.New("人机验证方式无效")
-	}
-	if v.ReferralMode != "first" && v.ReferralMode != "recurring" {
-		return errors.New("邀请返利类型无效")
-	}
-	if _, err := referralRate(v.ReferralRate); err != nil {
-		return err
-	}
-	if err := v.SMTP.Validate(v.RegistrationEnabled && v.RegistrationEmailVerification); err != nil {
-		return err
-	}
 	if _, err := networkpolicy.Normalize(v.ProxyTrustedCIDRs, 64); err != nil {
 		return err
 	}
@@ -173,11 +137,7 @@ func (s *Server) getSettings(w http.ResponseWriter, r *http.Request) {
 		s.dbError(w, e)
 		return
 	}
-	status := s.telegramInfo()
-	if !v.Telegram.Enabled {
-		status = telegramStatus{State: "disabled"}
-	}
-	writeJSON(w, 200, map[string]any{"settings": v, "api_key_configured": has, "agent_listener": s.agentListenerStatus(), "telegram_status": status})
+	writeJSON(w, 200, map[string]any{"settings": v, "api_key_configured": has, "agent_listener": s.agentListenerStatus()})
 }
 func (s *Server) saveSettings(w http.ResponseWriter, r *http.Request) {
 	if !admin(w, r) {
@@ -187,12 +147,6 @@ func (s *Server) saveSettings(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &v) {
 		return
 	}
-	v.TermsURL = strings.TrimSpace(v.TermsURL)
-	if err := v.Telegram.Normalize(); err != nil {
-		fail(w, 400, err.Error())
-		return
-	}
-	v.PrivacyURL = strings.TrimSpace(v.PrivacyURL)
 	v.SiteName = strings.TrimSpace(v.SiteName)
 	v.PanelURL = strings.TrimRight(v.PanelURL, "/")
 	v.ReleaseBaseURL = strings.TrimRight(v.ReleaseBaseURL, "/")
@@ -231,15 +185,9 @@ func (s *Server) saveSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	defer tx.Rollback(r.Context())
 	data, _ := json.Marshal(v)
-	if _, e := tx.Exec(r.Context(), "UPDATE site_settings SET telegram_generation=telegram_generation+CASE WHEN config->'telegram' IS DISTINCT FROM $1::jsonb->'telegram' THEN 1 ELSE 0 END,config=$1,updated_at=now() WHERE id=1", data); e != nil {
+	if _, e := tx.Exec(r.Context(), "UPDATE site_settings SET config=$1,updated_at=now() WHERE id=1", data); e != nil {
 		s.dbError(w, e)
 		return
-	}
-	if !v.Telegram.Enabled {
-		if _, e := tx.Exec(r.Context(), "UPDATE telegram_deliveries SET state='canceled' WHERE state='queued'"); e != nil {
-			s.dbError(w, e)
-			return
-		}
 	}
 	if e = store.New(tx).BumpRevision(r.Context()); e != nil {
 		s.dbError(w, e)

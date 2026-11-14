@@ -1,59 +1,23 @@
 <script setup lang="ts">
 import { copyText } from '../clipboard'
-import { computed,onUnmounted,reactive,ref,watch } from 'vue'
+import { reactive,ref } from 'vue'
 import { ElMessage,ElMessageBox } from 'element-plus'
 import PageShell from '../PageShell.vue'
 import {usePage} from '../page'
 import {api} from '../api'
 import {loadSite} from '../site'
 type SMTP={host:string;port:number;security:string;username:string;password:string;from:string;from_name:string}
-type TelegramSettings={enabled:boolean;token:string;admin_ids:number[];notification_chat_ids:number[];statistics_days:number}
-type Settings={telegram:TelegramSettings;registration_email_verification:boolean;force_invite:boolean;terms_url:string;privacy_url:string;registration_enabled:boolean;captcha_mode:string;smtp:SMTP;referral_enabled:boolean;referral_mode:string;referral_rate:string;site_name:string;panel_url:string;agent_host:string;agent_port:number;agent_transport:string;installer_url:string;release_base_url:string;agent_version:string;install_token_minutes:number;proxy_trusted_cidrs:string[];target_deny_cidrs:string[]}
-const form=reactive<Settings>({telegram:{enabled:false,token:'',admin_ids:[],notification_chat_ids:[],statistics_days:7},registration_email_verification:true,force_invite:false,terms_url:'',privacy_url:'',registration_enabled:false,captcha_mode:'image',smtp:{host:'',port:587,security:'starttls',username:'',password:'',from:'',from_name:''},referral_enabled:false,referral_mode:'first',referral_rate:'15',site_name:'Nekopass',panel_url:'',agent_host:'',agent_port:9443,agent_transport:'tls',installer_url:'https://github.com/hajidishu/nekopass/releases/latest/download/install-agent.sh',release_base_url:'https://github.com/hajidishu/nekopass/releases/download',agent_version:'latest',install_token_minutes:30,proxy_trusted_cidrs:[],target_deny_cidrs:[]})
-watch(()=>form.referral_enabled,value=>{if(!value)form.force_invite=false})
-const proxyTrustText=ref(''),targetDenyText=ref(''),telegramAdmins=ref(''),telegramChats=ref('')
-const telegramStatus=ref<{state:string;username?:string;error?:string}|null>(null)
-const telegramStates:Record<string,string>={disabled:'已关闭',not_configured:'未配置',starting:'正在连接',connected:'已连接',error:'连接异常'}
-function telegramIDs(text:string,positive:boolean){const values=text.split(/[,\s]+/).filter(Boolean).map(v=>{if(!/^-?[0-9]+$/.test(v))throw new Error('Telegram ID 须为数字，不使用 @用户名');const n=Number(v);if(!Number.isSafeInteger(n)||n===0||Math.abs(n)>4503599627370495||positive&&n<0)throw new Error('Telegram ID 无效');return n});return [...new Set(values)]}
+type Settings={registration_email_verification:boolean;terms_url:string;privacy_url:string;registration_enabled:boolean;captcha_mode:string;smtp:SMTP;site_name:string;panel_url:string;agent_host:string;agent_port:number;agent_transport:string;installer_url:string;release_base_url:string;agent_version:string;install_token_minutes:number;proxy_trusted_cidrs:string[];target_deny_cidrs:string[]}
+const form=reactive<Settings>({registration_email_verification:true,terms_url:'',privacy_url:'',registration_enabled:false,captcha_mode:'image',smtp:{host:'',port:587,security:'starttls',username:'',password:'',from:'',from_name:''},site_name:'Nekopass',panel_url:'',agent_host:'',agent_port:9443,agent_transport:'tls',installer_url:'https://github.com/hajidishu/nekopass/releases/latest/download/install-agent.sh',release_base_url:'https://github.com/hajidishu/nekopass/releases/download',agent_version:'latest',install_token_minutes:30,proxy_trusted_cidrs:[],target_deny_cidrs:[]})
+const proxyTrustText=ref(''),targetDenyText=ref('')
 const cidrs=(text:string)=>text.split(/[,\s]+/).filter(Boolean)
-const updateInfo=ref<{current_version:string;latest:{version:string;url:string};update_available:boolean}|null>(null),checkingUpdate=ref(false)
-async function checkUpdate(){checkingUpdate.value=true;try{updateInfo.value=await api('admin/updates')}catch(e){ElMessage.error((e as Error).message)}finally{checkingUpdate.value=false}}
-type PanelUpdateStatus={supported:boolean;current_version:string;task:{version:string;state:string;error?:string}|null}
-const panelStatus=ref<PanelUpdateStatus|null>(null),submittingUpdate=ref(false)
-const updating=computed(()=>panelStatus.value?.task?.state==='queued'||panelStatus.value?.task?.state==='running')
-const updateText:Record<string,string>={queued:'等待更新',running:'正在更新，面板可能短暂重启',completed:'更新完成',failed:'更新失败'}
-let updateTimer:ReturnType<typeof setTimeout>|undefined,stopped=false
-onUnmounted(()=>{stopped=true;if(updateTimer)clearTimeout(updateTimer)})
-async function pollPanelUpdate(){
- if(stopped)return
- try{
-  panelStatus.value=await api<PanelUpdateStatus>('admin/updates/panel')
-  if(panelStatus.value.task?.state==='completed'&&updatingBeforePoll){ElMessage.success('面板更新完成');updateTimer=setTimeout(()=>{if(!stopped)location.reload()},1200);return}
- }catch{/* Retry while the service restarts. */}
- if(!stopped&&updating.value)updateTimer=setTimeout(()=>{updatingBeforePoll=true;void pollPanelUpdate()},2000)
-}
-let updatingBeforePoll=false
-async function updatePanel(){
- submittingUpdate.value=true
- try{
-  const info=await api<NonNullable<typeof updateInfo.value>>('admin/updates');updateInfo.value=info
-  if(!info.update_available){ElMessage.info('已是最新版本');return}
-  const task=await api<NonNullable<PanelUpdateStatus['task']>>('admin/updates/panel','POST',{version:info.latest.version})
-  panelStatus.value={supported:true,current_version:info.current_version,task};updatingBeforePoll=true
-  ElMessage.success('更新任务已提交');void pollPanelUpdate()
- }catch(e){ElMessage.error((e as Error).message)}finally{submittingUpdate.value=false}
-}
 const activeTab=ref('site')
 const listener=ref<{address:string;mode:string}|null>(null)
 const hasKey=ref(false),customKey=ref(''),shownKey=ref(''),keyDialog=ref(false)
-type TelegramTest={sent:number;failed:number;results:{chat_id:number;current_chat_id?:number;chat_type?:string;sent:boolean;error?:string}[]}
-const telegramTest=ref<TelegramTest|null>(null)
-async function sendTelegramTest(){await run(async()=>{telegramTest.value=null;telegramTest.value=await api<TelegramTest>('admin/settings/telegram/test','POST',{telegram:{...form.telegram,admin_ids:telegramIDs(telegramAdmins.value,true),notification_chat_ids:telegramIDs(telegramChats.value,false)}});const result=telegramTest.value;if(result.failed)ElMessage.warning(`测试完成：成功 ${result.sent} 个，失败 ${result.failed} 个`);else ElMessage.success(`测试消息已发送至 ${result.sent} 个目标`)})}
-async function refreshTelegram(){const data=await api<{telegram_status:NonNullable<typeof telegramStatus.value>}>('admin/settings');telegramStatus.value=data.telegram_status}
-async function loadSettings(){const data=await api<{settings:Settings;api_key_configured:boolean;agent_listener:{address:string;mode:string}|null;telegram_status:{state:string;username?:string;error?:string}}>('admin/settings');Object.assign(form,data.settings);proxyTrustText.value=(form.proxy_trusted_cidrs||[]).join('\n');targetDenyText.value=(form.target_deny_cidrs||[]).join('\n');hasKey.value=data.api_key_configured;listener.value=data.agent_listener;telegramAdmins.value=(form.telegram.admin_ids||[]).join('\n');telegramChats.value=(form.telegram.notification_chat_ids||[]).join('\n');telegramStatus.value=data.telegram_status}
-const {me,loading,error,busy,run}=usePage(async()=>{await loadSettings();await pollPanelUpdate()},{admin:true})
+async function loadSettings(){const data=await api<{settings:Settings;api_key_configured:boolean;agent_listener:{address:string;mode:string}|null}>('admin/settings');Object.assign(form,data.settings);proxyTrustText.value=(form.proxy_trusted_cidrs||[]).join('\n');targetDenyText.value=(form.target_deny_cidrs||[]).join('\n');hasKey.value=data.api_key_configured;listener.value=data.agent_listener}
+const {me,loading,error,busy,run}=usePage(async()=>{await loadSettings()},{admin:true})
 function currentAddress(){form.panel_url=location.origin;form.agent_host=location.hostname.replace(/^\[|\]$/g,'')}
-async function save(){await run(async()=>{await api('admin/settings','PUT',{...form,telegram:{...form.telegram,admin_ids:telegramIDs(telegramAdmins.value,true),notification_chat_ids:telegramIDs(telegramChats.value,false)},proxy_trusted_cidrs:cidrs(proxyTrustText.value),target_deny_cidrs:cidrs(targetDenyText.value)});await loadSettings();await loadSite();ElMessage.success('系统设置已保存')})}
+async function save(){await run(async()=>{await api('admin/settings','PUT',{...form,proxy_trusted_cidrs:cidrs(proxyTrustText.value),target_deny_cidrs:cidrs(targetDenyText.value)});await loadSettings();await loadSite();ElMessage.success('系统设置已保存')})}
 async function key(){try{if(hasKey.value)await ElMessageBox.confirm('生成或设置新密钥会使旧管理 API 密钥失效。','更新管理密钥',{confirmButtonText:'更新',cancelButtonText:'取消'});await run(async()=>{const data=await api<{key:string}>('admin/settings/api-key','POST',{key:customKey.value});shownKey.value=data.key;customKey.value='';hasKey.value=true;keyDialog.value=true})}catch{/* cancelled */}}
 async function revoke(){try{await ElMessageBox.confirm('撤销后，现有管理 API 密钥将不能调用后台接口。','撤销管理密钥',{confirmButtonText:'撤销',cancelButtonText:'取消'});await run(async()=>{await api('admin/settings/api-key','DELETE',{});hasKey.value=false;ElMessage.success('管理 API 密钥已撤销')})}catch{/* cancelled */}}
 async function copyKey(){try{await copyText(shownKey.value);ElMessage.success('密钥已复制')}catch{ElMessage.warning('复制失败，请手动选择复制')}}
@@ -88,10 +52,9 @@ async function copyKey(){try{await copyText(shownKey.value);ElMessage.success('�
               <div class="form-section-title">用户注册</div>
               <el-form-item label="开放注册"><el-switch v-model="form.registration_enabled"/><span class="field-tip">关闭后仅管理员可以创建用户。</span></el-form-item>
               <el-form-item label="注册邮件验证"><el-switch v-model="form.registration_email_verification"/><span class="field-tip">开启时须配置 SMTP 并验证邮箱；关闭后注册无需邮件验证码，人机验证仍按注册设置执行。</span></el-form-item>
-              <el-form-item label="强制邀请注册"><el-switch v-model="form.force_invite" :disabled="!form.referral_enabled"/><span class="field-tip">须先开启邀请返利。开启后必须填写有效的老用户邀请码。</span></el-form-item>
               <el-form-item label="用户条款 URL"><el-input v-model="form.terms_url" placeholder="https://example.com/terms"/></el-form-item>
               <el-form-item label="隐私条款 URL"><el-input v-model="form.privacy_url" placeholder="https://example.com/privacy"/></el-form-item>
-              <el-form-item label="人机验证方式"><el-select v-model="form.captcha_mode"><el-option label="关闭" value="off"/><el-option label="图形验证码" value="image"/></el-select><span class="field-tip">注册与创建工单共用此设置。</span></el-form-item>
+              <el-form-item label="人机验证方式"><el-select v-model="form.captcha_mode"><el-option label="关闭" value="off"/><el-option label="图形验证码" value="image"/></el-select></el-form-item>
             </el-form>
           </div>
         </el-tab-pane>
@@ -106,34 +69,6 @@ async function copyKey(){try{await copyText(shownKey.value);ElMessage.success('�
               <el-form-item label="SMTP 密码 / 授权码"><el-input v-model="form.smtp.password" type="password" show-password autocomplete="new-password"/></el-form-item>
               <el-form-item label="发件邮箱"><el-input v-model="form.smtp.from" type="email"/></el-form-item>
               <el-form-item label="发件名称"><el-input v-model="form.smtp.from_name"/></el-form-item>
-              </div>
-            </el-form>
-          </div>
-        </el-tab-pane>
-        <el-tab-pane label="邀请返利" name="referral">
-          <div class="section-body settings-form">
-            <el-form label-position="top" @submit.prevent="save">
-              <div class="form-section-title">邀请返利</div>
-              <el-form-item label="启用邀请返利"><el-switch v-model="form.referral_enabled"/></el-form-item>
-              <div class="form-grid"><el-form-item label="默认返利类型"><el-select v-model="form.referral_mode"><el-option label="首次返利" value="first"/><el-option label="循环返利" value="recurring"/></el-select></el-form-item>
-              <el-form-item label="默认返利比例"><el-input v-model="form.referral_rate" inputmode="decimal"><template #append>%</template></el-input></el-form-item>
-              </div>
-              <p class="field-tip">仅大于 0 元的套餐购买和续费参与返利，充值及免费套餐不计算。个人设置在用户管理中调整。</p>
-            </el-form>
-          </div>
-        </el-tab-pane>
-        <el-tab-pane label="Telegram" name="telegram">
-          <div class="section-body settings-form">
-            <el-form label-position="top" @submit.prevent="save">
-              <div class="form-section-title">Telegram Bot</div>
-              <el-form-item label="启用 Telegram Bot"><el-switch v-model="form.telegram.enabled"/><span class="field-tip">保存后生效。关闭时保留配置，停止机器人查询和自动通知。</span></el-form-item>
-              <el-form-item label="Bot 密钥"><el-input v-model="form.telegram.token" type="password" show-password autocomplete="new-password" placeholder="BotFather 提供的 Bot Token"/><span class="field-tip">开启 Bot 前填写密钥；关闭开关即可停止机器人。</span></el-form-item>
-              <el-form-item label="管理员 Telegram 用户 ID"><el-input v-model="telegramAdmins" type="textarea" :rows="3" placeholder="每行一个数字用户 ID"/><span class="field-tip">仅这些账号的私聊可以查询面板和节点。先私聊机器人发送 /start，可在权限提示中看到自己的用户 ID。</span></el-form-item>
-              <el-form-item label="IP / DDNS 通知目标 Chat ID"><el-input v-model="telegramChats" type="textarea" :rows="3" placeholder="每行一个 ID：用户私聊为正数，群组通常为负数"/><span class="field-tip">私聊接收人先发送 /start；群组先加入机器人。通知接收人不自动获得管理权限，群聊仅接收通知。</span></el-form-item>
-              <el-form-item label="近期 IP 更换统计周期"><el-input-number v-model="form.telegram.statistics_days" :min="1" :max="90"/><span class="field-tip">天；默认统计近 7 天，首次发现地址不计为更换。</span></el-form-item>
-              <p v-if="telegramStatus" class="field-tip">机器人状态：{{telegramStates[telegramStatus.state]||telegramStatus.state}} <span v-if="telegramStatus.username">· @{{telegramStatus.username}}</span> {{telegramStatus.error||''}}</p>
-              <el-button :loading="busy" @click="run(refreshTelegram)">刷新机器人状态</el-button><el-button :loading="busy" :disabled="!form.telegram.token.trim()||!telegramChats.trim()" @click="sendTelegramTest">发送测试消息</el-button><p class="field-tip">使用当前填写的密钥和通知目标，无需先保存或启用 Bot。测试消息只包含 Chat ID、聊天类型和测试时间。</p>
-              <div v-if="telegramTest" class="field-tip"><p v-for="result in telegramTest.results" :key="result.chat_id">{{result.chat_id}}{{result.current_chat_id&&result.current_chat_id!==result.chat_id?' → '+result.current_chat_id:''}} · {{result.sent?'发送成功':result.error}}</p>
               </div>
             </el-form>
           </div>
@@ -159,16 +94,6 @@ async function copyKey(){try{await copyText(shownKey.value);ElMessage.success('�
               <el-form-item label="Agent 版本下载根地址"><el-input v-model="form.release_base_url" placeholder="https://github.com/hajidishu/nekopass/releases/download" /></el-form-item>
               <div class="form-grid"><el-form-item label="Agent 版本"><el-input v-model="form.agent_version" placeholder="latest" /></el-form-item>
               </div>
-            </el-form>
-          </div>
-        </el-tab-pane>
-        <el-tab-pane label="软件更新" name="updates">
-          <div class="section-body settings-form">
-            <el-form label-position="top" @submit.prevent="save">
-              <div class="form-section-title">软件更新</div>
-              <el-button :loading="checkingUpdate" @click="checkUpdate">检查更新</el-button><el-button type="primary" :loading="submittingUpdate||updating" :disabled="!panelStatus?.supported||updating" @click="updatePanel">立即更新</el-button><p v-if="panelStatus?.task" class="field-tip">{{updateText[panelStatus.task.state]||panelStatus.task.state}} · {{panelStatus.task.version}} {{panelStatus.task.error||''}}</p>
-              <p v-if="panelStatus&&!panelStatus.supported" class="field-tip">更新暂不可用，请检查服务状态。更新组件随软件安装和升级自动部署。</p>
-              <p v-if="updateInfo" class="field-tip">当前主控 {{updateInfo.current_version}} · 最新版本 <a :href="updateInfo.latest.url" target="_blank" rel="noopener">{{updateInfo.latest.version}}</a> · {{updateInfo.update_available?'有可用更新':'已是最新版本'}}。点击「立即更新」升级面板，更新时会短暂重启；节点更新在节点管理操作。</p>
             </el-form>
           </div>
         </el-tab-pane>

@@ -30,7 +30,6 @@ with tarfile.open(a.output, 'w:gz') as archive:
     add(a.manager, 'bin/nekopassctl', True)
     if (repo/'LICENSE').is_file():
         add(repo/'LICENSE', 'LICENSE')
-    add(repo / 'scripts/nekopass-update.py', 'bin/nekopass-update', True)
     for file in sorted(a.web.rglob('*')):
         if file.is_dir():
             assert not file.is_symlink()

@@ -48,12 +48,6 @@ func run() error {
 		return err
 	}
 	defer engine.Close()
-	// The privileged updater is installed separately; Agent retains its normal user.
-	if _, err := os.Stat("/etc/systemd/system/" + filepath.Base(filepath.Dir(*statePath)) + "-update.path"); err == nil {
-		if err = engine.SetUpdateDirectory(filepath.Dir(*statePath)); err != nil {
-			return err
-		}
-	}
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 	slog.Info("agent starting", "server", *server)

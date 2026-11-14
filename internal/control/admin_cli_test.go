@@ -33,17 +33,13 @@ func TestInstallationSettingsUseDefaultsAndPreserveExistingOptions(t *testing.T)
 		t.Fatal(err)
 	}
 	defaults := defaultSettings()
-	if current.CaptchaMode != defaults.CaptchaMode || current.ReferralMode != defaults.ReferralMode || current.ReferralRate != defaults.ReferralRate || current.SMTP != defaults.SMTP || !current.RegistrationEmailVerification || !reflect.DeepEqual(current.TargetDenyCIDRs, defaults.TargetDenyCIDRs) {
+	if !reflect.DeepEqual(current.TargetDenyCIDRs, defaults.TargetDenyCIDRs) {
 		t.Fatal("omitted defaults were lost")
 	}
 	if current.SiteName != "Fixture panel" || current.AgentTransport != "plain" || current.AgentPort != 19443 {
 		t.Fatal("installer configuration not applied")
 	}
-	// A later local init must not erase unrelated security/registration settings.
-	current.CaptchaMode = "off"
-	current.ReferralMode = "recurring"
-	current.ReferralRate = "12.5"
-	current.RegistrationEmailVerification = false
+	// A later local init must not erase unrelated settings.
 	current.ProxyTrustedCIDRs = []string{"192.0.2.0/24"}
 	current.TargetDenyCIDRs = []string{"127.0.0.0/8"}
 	data, _ := json.Marshal(current)

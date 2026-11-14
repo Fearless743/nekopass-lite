@@ -23,21 +23,10 @@ message AgentMessage {
   string error = 5;
   int64 active_connections = 6;
   string instance_id = 7;
-  Probe probe = 8;
   int32 protocol_version = 9;
   int64 acme_ack = 10;
-  DDNSStatus ddns_status = 11;
-  string agent_version = 12;
-  UpdateStatus update_status = 13;
-  bool update_supported = 14;
   bool restore_state = 15;
- PublicIPStatus public_ip = 16;
- IPRecoveryStatus ip_recovery_status = 17;
-}
-message PublicIPStatus {
- string ipv4 = 1;
- string ipv6 = 2;
- int64 checked_unix = 3;
+  reserved 8, 11, 12, 13, 14, 16, 17;
 }
 message UserPolicy {
   int64 id = 1;
@@ -135,9 +124,9 @@ message ControlMessage {
   repeated Usage acknowledged_usage = 5;
   repeated TunnelLink tunnel_links = 6;
   repeated EgressRule egress_rules = 7;
-  UpdateRequest update = 8;
   string control_endpoint = 9;
   StateRestore state_restore = 10;
+  reserved 8;
 }
 
 message UserStateBaseline {
@@ -157,9 +146,6 @@ message StateRestore {
  repeated RuleUsage rules = 3;
 }
 
-message UpdateRequest { int64 generation = 1; string version = 2; }
-message UpdateStatus { int64 generation = 1; string version = 2; string state = 3; string error = 4; }
-
 message NodeConfig {
  bool enabled = 1;
  string listen_host = 2;
@@ -168,22 +154,16 @@ message NodeConfig {
  int64 max_connections = 5;
  int32 dial_timeout_seconds = 6;
  int32 idle_timeout_seconds = 7;
- int32 probe_interval_seconds = 8;
- string disk_path = 9;
- repeated string network_interfaces = 10;
  bool tunnel_exit_enabled = 11;
  string tunnel_listen_host = 12;
  int32 tunnel_listen_port = 13;
  int64 node_id = 14;
  string tunnel_protocol = 15;
  TLSServerConfig tls = 16;
- DDNSConfig ddns = 17;
  repeated string proxy_trusted_cidrs = 18;
  repeated string target_deny_cidrs = 19;
  bool security_configured = 20;
  int32 udp_idle_timeout_seconds = 21;
- bool report_public_ip = 22;
- IPRecoveryConfig ip_recovery = 23;
  repeated SharedTLSInbound tls_inbounds = 24;
  bool tls_inbound_only = 25;
  repeated ACMEHTTPEndpoint acme_http = 26;
@@ -193,69 +173,10 @@ message NodeConfig {
  bool brutal_enabled = 30;
  bool client_tcp_brutal_enabled = 31;
  MuxConfig mux = 32;
+ reserved 8, 9, 10, 17, 22, 23;
 }
 
-message IPRecoveryConfig {
- bool enabled = 1;
- int64 generation = 2;
- string target_ip = 3;
- int32 failure_threshold = 4;
- int32 cooldown_seconds = 5;
- string instance_type = 6;
- string auth_token = 7;
- string share_group_token = 8;
- string account_id = 9;
- string region_name = 10;
- string instance_id = 11;
- bool static_ip = 12;
- int64 reset_sequence = 13;
- string binding_mode = 14;
- string profile_id = 15;
-}
-message IPRecoveryStatus {
- int64 generation = 1;
- string state = 2;
- int32 failures = 3;
- bool reachable = 4;
- int64 checked_unix = 5;
- int64 last_attempt_unix = 6;
- int64 last_changed_unix = 7;
- int64 cooldown_until_unix = 8;
- string old_ip = 9;
- string new_ip = 10;
- string error = 11;
- string instance_id = 12;
- string account_id = 13;
- string region_name = 14;
-}
 
-message DDNSConfig {
- bool enabled = 1;
- int64 generation = 2;
- string provider = 3;
- string record_name = 4;
- string zone_id = 5;
- string token = 6;
- bool ipv4 = 7;
- bool ipv6 = 8;
- int32 interval_seconds = 9;
- int32 ttl = 10;
- string ipv4_url = 11;
- string ipv6_url = 12;
- string ip_source = 13;
- bool ignore_private_ips = 14;
-}
-message DDNSStatus {
- int64 generation = 1;
- string state = 2;
- string ipv4 = 3;
- string ipv6 = 4;
- int64 checked_unix = 5;
- int64 updated_unix = 6;
- string error = 7;
- string observed_ipv4 = 8;
- string observed_ipv6 = 9;
-}
 
 message RandomConfig { string cipher = 1; string key = 2; }
 
@@ -306,39 +227,4 @@ message ACMEChallenge {
  string key_authorization = 3;
  int64 revision = 4;
  int64 expires_unix = 5;
-}
-message Probe {
- int64 sampled_at = 1;
- double cpu_percent = 2;
- int64 memory_total = 3;
- int64 memory_used = 4;
- int64 disk_total = 5;
- int64 disk_used = 6;
- double rx_mbps = 7;
- double tx_mbps = 8;
- int64 tcp_connections = 9;
- int64 udp_sockets = 10;
- double load1 = 11;
- double load5 = 12;
- double load15 = 13;
- bool cpu_ready = 14;
- bool memory_ready = 15;
- bool disk_ready = 16;
- bool network_ready = 17;
- bool connections_ready = 18;
- bool load_ready = 19;
- int64 uptime_seconds = 20;
- bool uptime_ready = 21;
- double disk_read_bytes_per_second = 22;
- double disk_write_bytes_per_second = 23;
- bool disk_io_ready = 24;
- string disk_device = 25;
- string boot_id = 26;
- repeated InterfaceTraffic network_counters = 27;
- bool network_counters_ready = 28;
-}
-message InterfaceTraffic {
- string name = 1;
- int64 rx_bytes = 2;
- int64 tx_bytes = 3;
 }

@@ -11,12 +11,6 @@ import (
 )
 
 func TestPageRoutesAndSafeReturns(t *testing.T) {
-	if route, ok := resolvePage("/admin/orders"); !ok || route.file != "admin_orders" || !route.admin {
-		t.Fatal("administrator order page route invalid")
-	}
-	if safeNext("/admin/orders?user_id=5", false) != "/" || safeNext("/admin/orders?user_id=5", true) != "/admin/orders?user_id=5" {
-		t.Fatal("administrator order return scope invalid")
-	}
 	if route, ok := resolvePage("/admin/nodes/123/protocols"); !ok || route.file != "admin_node_protocols" || !route.admin || route.nodeID != 123 {
 		t.Fatal("protocol page route invalid")
 	}
@@ -28,18 +22,7 @@ func TestPageRoutesAndSafeReturns(t *testing.T) {
 	if safeNext("/admin/nodes/123/protocols", false) != "/" || safeNext("/admin/nodes/123/protocols", true) != "/admin/nodes/123/protocols" {
 		t.Fatal("protocol page return scope invalid")
 	}
-	if route, ok := resolvePage("/admin/nodes/123/ddns"); !ok || route.file != "admin_node_ddns" || !route.admin || route.nodeID != 123 {
-		t.Fatal("DDNS page route invalid")
-	}
-	for _, path := range []string{"/admin/nodes/0/ddns", "/admin/nodes/01/ddns", "/admin/nodes/-1/ddns", "/admin/nodes/999999999999999999999/ddns"} {
-		if _, ok := resolvePage(path); ok {
-			t.Fatal("invalid DDNS page route accepted")
-		}
-	}
-	if safeNext("/admin/nodes/123/ddns", false) != "/" || safeNext("/admin/nodes/123/ddns", true) != "/admin/nodes/123/ddns" {
-		t.Fatal("DDNS return scope invalid")
-	}
-	for path, file := range map[string]string{"/": "home", "/login": "login", "/profile": "profile", "/forward_rules": "forward_rules", "/node_status": "node_status", "/admin": "admin", "/admin/announcements": "admin_announcements", "/admin/users": "admin_users", "/admin/plans": "admin_plans", "/admin/nodes": "admin_nodes", "/admin/node_groups": "admin_node_groups", "/admin/users/123/forward_rules": "admin_user_rules"} {
+	for path, file := range map[string]string{"/": "home", "/login": "login", "/profile": "profile", "/forward_rules": "forward_rules", "/admin": "admin", "/admin/announcements": "admin_announcements", "/admin/users": "admin_users", "/admin/nodes": "admin_nodes", "/admin/node_groups": "admin_node_groups", "/admin/users/123/forward_rules": "admin_user_rules"} {
 		p, ok := resolvePage(path)
 		if !ok || p.file != file {
 			t.Fatalf("bad page %s: %+v", path, p)
@@ -95,7 +78,7 @@ func TestPageAccessAndProfileScope(t *testing.T) {
 		h.ServeHTTP(w, r)
 		return w
 	}
-	for _, path := range []string{"/", "/profile", "/forward_rules", "/node_status", "/admin", "/admin/users"} {
+	for _, path := range []string{"/", "/profile", "/forward_rules", "/admin", "/admin/users"} {
 		w := request(0, path)
 		if w.Code != 303 {
 			t.Fatalf("anonymous %s: %d", path, w.Code)
@@ -108,13 +91,13 @@ func TestPageAccessAndProfileScope(t *testing.T) {
 	if w := request(0, "/login"); w.Code != 200 || !strings.Contains(w.Body.String(), "/pages/login.html") {
 		t.Fatal("login document missing")
 	}
-	for path, file := range map[string]string{"/": "home", "/profile": "profile", "/forward_rules": "forward_rules", "/node_status": "node_status"} {
+	for path, file := range map[string]string{"/": "home", "/profile": "profile", "/forward_rules": "forward_rules"} {
 		w := request(uid, path)
 		if w.Code != 200 || w.Body.String() != "document:/pages/"+file+".html" {
 			t.Fatalf("user page %s: %d %s", path, w.Code, w.Body.String())
 		}
 	}
-	for _, path := range []string{"/admin", "/admin/users", "/admin/plans", "/admin/nodes", "/admin/node_groups", "/admin/announcements", fmt.Sprintf("/admin/users/%d/forward_rules", uid)} {
+	for _, path := range []string{"/admin", "/admin/users", "/admin/nodes", "/admin/node_groups", "/admin/announcements", fmt.Sprintf("/admin/users/%d/forward_rules", uid)} {
 		if w := request(uid, path); w.Code != 403 || strings.Contains(w.Body.String(), "document:") {
 			t.Fatalf("admin HTML exposed: %s", path)
 		}
@@ -127,7 +110,7 @@ func TestPageAccessAndProfileScope(t *testing.T) {
 			t.Fatalf("unexpected fallback %s: %d", path, w.Code)
 		}
 	}
-	if w := request(adminID, "/login?next=%2Fadmin%2Fplans"); w.Code != 303 || w.Header().Get("Location") != "/admin/plans" {
+	if w := request(adminID, "/login?next=%2Fadmin%2Fusers"); w.Code != 303 || w.Header().Get("Location") != "/admin/users" {
 		t.Fatal("logged-in redirect failed")
 	}
 	if w := request(uid, "/admin/"); w.Code != 308 || w.Header().Get("Location") != "/admin" {

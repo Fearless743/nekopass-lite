@@ -27,7 +27,6 @@ func Run(ctx context.Context, e *Engine, server, token string) error {
 	if err = e.Apply(c); err != nil {
 		return err
 	}
-	go e.collectProbe(ctx)
 	for ctx.Err() == nil {
 		target, transport, err := controlEndpoint(server)
 		if err != nil {

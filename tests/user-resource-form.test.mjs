@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { resourcesOf, resourceChanges, planResources } from '../web/src/user-resource-form.ts'
+import { resourcesOf, resourceChanges } from '../web/src/user-resource-form.ts'
 
 test('unchanged displays never overwrite live usage or round byte-exact quotas', () => {
   const user={quota_bytes:1234567890,traffic_bytes:17345,speed_mbps:500,node_group_ids:[2,1],expires_at:'2026-12-01T00:00:00Z'}
@@ -20,17 +20,4 @@ test('explicit traffic reset, unlimited limits, zero quota and permanent expiry 
   assert.equal(resourceChanges(form,original).quota_bytes,0)
   assert.equal(resourceChanges(form,original).traffic_bytes,1.125*1024**3)
   for(const value of ['-1','NaN','Infinity','1e3','1abc'])assert.throws(()=>resourceChanges({...form,traffic_gib:value},original))
-})
-
-test('plan selection initializes personal limits without sharing mutable arrays', () => {
-  const plan={quota_bytes:-1,speed_mbps:10,max_rules:3,node_group_ids:[1,2],duration_days:0}
-  const form={...planResources(plan),traffic_gib:'0'}
-  form.node_group_ids.push(4)
-  assert.deepEqual(plan.node_group_ids,[1,2])
-  form.speed_mbps=0
-  const body=resourceChanges(form)
-  assert.equal(body.speed_mbps,0)
-  assert.equal(body.quota_bytes,-1)
-  assert.equal(body.expires_at,'')
-  assert.equal(body.traffic_bytes,undefined)
 })

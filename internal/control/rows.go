@@ -9,6 +9,10 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
+func (s *Server) sendRows(w http.ResponseWriter, rows pgx.Rows, err error) {
+	s.sendRowsWith(w, rows, err, nil)
+}
+
 // Keep the JSON array API while retaining only one database row and one JSON
 // row buffer. A full-result encoder otherwise holds both all decoded rows and
 // an equally large encoding buffer, multiplied by concurrent polling clients.

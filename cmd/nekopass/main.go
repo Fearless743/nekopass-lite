@@ -100,15 +100,7 @@ func run() error {
 		return err
 	}
 	server := control.New(p)
-	updateDir := os.Getenv("NEKOPASS_PANEL_UPDATE_DIR")
-	if updateDir == "" {
-		updateDir = "/var/lib/nekopass"
-	}
-	server.SetPanelUpdateDirectory(updateDir)
-	go server.RunSubscriptionClock(ctx)
 	go server.RunCertificateClock(ctx)
-	go server.RunTelegramBot(ctx)
-	go server.RunPanelProbe(ctx)
 	if trusted, exists := os.LookupEnv("NEKOPASS_TRUSTED_PROXIES"); exists {
 		if err = server.SetTrustedProxies(trusted); err != nil {
 			return err

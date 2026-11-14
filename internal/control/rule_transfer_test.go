@@ -62,7 +62,7 @@ func TestImportedAutoProxyRuleIsAtomicScopedAndSafeForOlderAgents(t *testing.T) 
 		t.Fatal("import changed owner or Proxy Protocol configuration", err)
 	}
 	stream := &StreamServer{Server: f.s}
-	report := &pb.AgentMessage{InstanceId: Secret(), ProtocolVersion: 9, UpdateSupported: true}
+	report := &pb.AgentMessage{InstanceId: Secret(), ProtocolVersion: 9}
 	out, err := stream.exchange(ctx, f.p, node, report)
 	if err != nil || len(out.Rules) != 1 || out.Rules[0].Enabled {
 		t.Fatal("old Agent cannot stay connected or auto receiver was downgraded", err)

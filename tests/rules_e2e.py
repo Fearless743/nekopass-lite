@@ -1,6 +1,6 @@
 """Additional direct-forwarding integration checks for a dedicated systemd test host."""
 import json, pathlib, secrets, socket, socketserver, struct, threading, time
-from e2e import api, client, wait, echo, PlanFixture
+from e2e import api, client, wait, echo, UserFixture
 
 class Server(socketserver.ThreadingTCPServer):
     allow_reuse_address=True
@@ -24,19 +24,19 @@ def main():
     creds=json.loads(pathlib.Path('/root/nekopass-test-access.json').read_text())
     api('login',creds,'POST')
     node=next(n for n in api('admin/nodes') if n['online'])['id']
-    f=PlanFixture(node);uid=f.uid;user=f.user;manage=f.request
+    f=UserFixture(node);uid=f.uid;user=f.user;manage=f.request
     gid=manage('rule-groups',{'name':'test-group','user_id':uid},'POST')['id']
     a,ac=target();b,bc=target();proxy,pc=target(True)
     owned=[]
     def latest(rid): return next(r for r in manage('rules') if r['id']==rid)
     def synced(rid): return wait(lambda: latest(rid) if latest(rid)['status']=='active' else None)
     def put(rid,config):
-        f.update_plan(rule_speed_mbps=config.get('speed_mbps',0),rule_ip_limit=config.get('ip_limit',0),rule_connection_limit=config.get('connection_limit',0))
+        f.update_resources(rule_speed_mbps=config.get('speed_mbps',0),rule_ip_limit=config.get('ip_limit',0),rule_connection_limit=config.get('connection_limit',0))
         manage('rules/'+str(rid),{**config,'speed_mbps':0,'ip_limit':0,'connection_limit':0},'PUT');return synced(rid)
     def usage(): return next(u for u in api('users') if u['id']==uid)
     base={'user_id':uid,'node_id':node,'name':'multi-target','group_id':gid,'listen_port':0,'targets':['127.0.0.1:'+str(a.server_address[1]),'127.0.0.1:'+str(b.server_address[1])],'balance':'round_robin','enabled':True,'speed_mbps':0,'ip_limit':0,'connection_limit':0,'proxy_accept':'off','proxy_send':'off','proxy_trusted_cidrs':[]}
     try:
-        f.update_plan(rule_speed_mbps=8)
+        f.update_resources(rule_speed_mbps=8)
         rid=manage('rules',base,'POST')['id'];owned.append(rid);r=synced(rid);port=r['listen_port']
         node_config=next(n for n in api('admin/nodes') if n['id']==node)
         assert node_config['port_min']<=port<=node_config['port_max'] and r['group_id']==gid

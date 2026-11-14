@@ -72,13 +72,11 @@ def main():
  finally:
   if node:
    n=next(n for n in api('admin/nodes') if n['id']==node)
-   from plans_e2e import NODE_FIELDS
+   from e2e import NODE_FIELDS
    cfg={k:n[k] for k in NODE_FIELDS};cfg['enabled']=False
    api('admin/nodes/'+str(node),cfg,'PUT')
    if STATE.exists():wait(lambda:next(n for n in api('admin/nodes') if n['id']==node)['applied_revision']>=next(n for n in api('admin/nodes') if n['id']==node)['config_revision'])
   subprocess.run(['systemctl','disable','--now',SERVICE],capture_output=True)
-  subprocess.run(['systemctl','disable','--now',SERVICE+'-update.path'],capture_output=True)
-  subprocess.run(['systemctl','stop',SERVICE+'-update.service'],capture_output=True)
   if node:api('admin/nodes/'+str(node),{},'DELETE')
   api('admin/settings',original,'PUT');server.shutdown()
   # Exact isolated fixture directories only; never remove the production state.
@@ -87,7 +85,6 @@ def main():
    assert p.name==SERVICE and SERVICE!='nekopass-agent'
    if p.exists():shutil.rmtree(p)
   pathlib.Path('/etc/systemd/system/'+SERVICE+'.service').unlink(missing_ok=True)
-  for suffix in ['-update.path','-update.service']:pathlib.Path('/etc/systemd/system/'+SERVICE+suffix).unlink(missing_ok=True)
   subprocess.run(['systemctl','daemon-reload'],check=True)
  print('ALL INSTALLER E2E TESTS PASSED',flush=True)
 if __name__=='__main__':main()

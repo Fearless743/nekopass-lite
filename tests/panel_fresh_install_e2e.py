@@ -101,9 +101,8 @@ def main():
             api('/api/v1/login', {'username': 'fixture-admin', 'password': password[1]})
             assert api('/api/v1/me')['is_admin'] is True
             settings = api('/api/v1/admin/settings')['settings']
-            assert settings['captcha_mode'] == 'image' and settings['referral_mode'] == 'first'
-            assert settings['referral_rate'] == '15' and settings['smtp']['port'] == 587
-            assert settings['registration_email_verification'] is True
+            assert settings['site_name'] == 'Nekopass'
+            assert '127.0.0.0/8' in settings['target_deny_cidrs']
             assert '127.0.0.0/8' in settings['target_deny_cidrs']
             assert settings['agent_transport'] == 'plain' and settings['agent_port'] == grpc_port
             assert settings['panel_url'] == base
@@ -116,9 +115,7 @@ def main():
             assert config_file.read_bytes() == original_env
             # Env alone decides whether this is an installed panel. Existing
             # binary/unit/database must allow retry, without losing the admin.
-            settings['captcha_mode'] = 'off'
-            settings['referral_mode'] = 'recurring'
-            settings['referral_rate'] = '12.5'
+            settings['site_name'] = 'Changed'
             api('/api/v1/admin/settings', settings, 'PUT')
             assert config_file.resolve() == pathlib.Path('/etc') / SERVICE / 'control.env'
             config_file.unlink()
@@ -132,15 +129,14 @@ def main():
             assert '管理员密码：' not in retried.stdout and config_file.read_bytes() == original_env
             api('/api/v1/login', {'username': 'fixture-admin', 'password': password[1]})
             retained = api('/api/v1/admin/settings')['settings']
-            assert retained['captcha_mode'] == 'off' and retained['referral_mode'] == 'recurring'
-            assert retained['referral_rate'] == '12.5'
+            assert retained['site_name'] == 'Changed'
             # Reset is explicit. Dry run and invalid input must leave it intact.
             planned = subprocess.run(install_args + ['--reinstall', '--dry-run'], capture_output=True, text=True, timeout=30)
             assert planned.returncode == 0 and config_file.read_bytes() == original_env
-            assert api('/api/v1/admin/settings')['settings']['referral_rate'] == '12.5'
+            assert api('/api/v1/admin/settings')['settings']['site_name'] == 'Changed'
             invalid = subprocess.run(install_args + ['--reinstall', '--agent-installer', 'http://invalid.example.test/script'], capture_output=True, text=True, timeout=180)
             assert invalid.returncode != 0 and config_file.read_bytes() == original_env
-            assert api('/api/v1/admin/settings')['settings']['referral_rate'] == '12.5'
+            assert api('/api/v1/admin/settings')['settings']['site_name'] == 'Changed'
             # Rejecting the destructive confirmation leaves the active panel intact.
             master, slave = pty.openpty()
             try:
@@ -152,7 +148,7 @@ def main():
                 os.close(master)
             assert canceled.returncode != 0 and '已取消清空重装' in canceled.stderr
             assert config_file.read_bytes() == original_env
-            assert api('/api/v1/admin/settings')['settings']['referral_rate'] == '12.5'
+            assert api('/api/v1/admin/settings')['settings']['site_name'] == 'Changed'
             agent_config = config_file.parent / 'agent.env'
             agent_config.write_text('NEKOPASS_SERVER=http://127.0.0.1:1\n')
             reset = subprocess.run(install_args + ['--reinstall'], cwd='/root', capture_output=True, text=True, timeout=180)
@@ -166,7 +162,7 @@ def main():
             opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
             api('/api/v1/login', {'username': 'fixture-admin', 'password': replacement_password[1]})
             clean = api('/api/v1/admin/settings')['settings']
-            assert clean['captcha_mode'] == 'image' and clean['referral_mode'] == 'first' and clean['referral_rate'] == '15'
+            assert clean['site_name'] == 'Nekopass'
             assert agent_config.read_text() == 'NEKOPASS_SERVER=http://127.0.0.1:1\n'
             assert sql(db_port, 'SELECT count(*) FROM users', SERVICE) == '1'
             assert sql(db_port, 'SELECT count(*) FROM nodes', SERVICE) == '0'

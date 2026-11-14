@@ -86,7 +86,7 @@ def main():
         assert not (pathlib.Path('/etc')/service).exists()
         assert not (pathlib.Path('/etc/systemd/system')/(service+'.service')).exists()
     assert sql("SELECT count(*) FROM pg_database WHERE datname='"+SERVICE+"'")=='0'
-    production=sql("SELECT json_build_object('users',(SELECT count(*) FROM users),'plans',(SELECT count(*) FROM plans),'nodes',(SELECT json_agg(json_build_array(id,token_hash,token)) FROM nodes),'settings',(SELECT config FROM site_settings WHERE id=1),'balance',(SELECT sum(balance_cents) FROM wallet_accounts))",'nekopass')
+    production=sql("SELECT json_build_object('users',(SELECT count(*) FROM users),'nodes',(SELECT json_agg(json_build_array(id,token_hash,token)) FROM nodes),'settings',(SELECT config FROM site_settings WHERE id=1))",'nekopass')
     previous_cli=pathlib.Path('/usr/local/bin/nekopassctl').read_bytes()
     server=None
     try:
@@ -163,7 +163,7 @@ def main():
             if any(n['id']==node['id'] and n['online'] for n in nodes):online=True;break
             time.sleep(1)
         assert online, 'Installed Agent did not connect over HTTP/2'
-        assert sql("SELECT json_build_object('users',(SELECT count(*) FROM users),'plans',(SELECT count(*) FROM plans),'nodes',(SELECT json_agg(json_build_array(id,token_hash,token)) FROM nodes),'settings',(SELECT config FROM site_settings WHERE id=1),'balance',(SELECT sum(balance_cents) FROM wallet_accounts))",'nekopass')==production
+        assert sql("SELECT json_build_object('users',(SELECT count(*) FROM users),'nodes',(SELECT json_agg(json_build_array(id,token_hash,token)) FROM nodes),'settings',(SELECT config FROM site_settings WHERE id=1))",'nekopass')==production
         print('PASS interactive install, PostgreSQL selection, systemd/autostart, HTTP UI, random admin, password recovery/session revocation, existing-install protection and real plaintext Agent connection; production unchanged')
     finally:
         if server:server.shutdown();server.server_close()

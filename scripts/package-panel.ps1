@@ -30,9 +30,7 @@ try {
     $manager = [IO.File]::ReadAllText((Join-Path $repoRoot 'scripts/nekopassctl.sh')).Replace("`r`n", "`n")
     $installer = [IO.File]::ReadAllText((Join-Path $repoRoot 'scripts/install-panel.sh')).Replace("`r`n", "`n")
     $payload = "write_manager_payload() {`ncat <<'NEKOPASS_MANAGER_PAYLOAD'`n" + $manager.TrimEnd() + "`nNEKOPASS_MANAGER_PAYLOAD`n}`n"
-    $updater = [IO.File]::ReadAllText((Join-Path $repoRoot 'scripts/nekopass-update.py')).Replace("`r`n", "`n")
-    $updaterPayload = "write_updater_payload() {`ncat <<'NEKOPASS_UPDATER_PAYLOAD'`n" + $updater.TrimEnd() + "`nNEKOPASS_UPDATER_PAYLOAD`n}`n"
-    $installer = $installer.Replace('# PACKAGED_MANAGER', $payload).Replace('# PACKAGED_UPDATER', $updaterPayload).Replace("DEFAULT_DOWNLOAD_BASE='https://github.com/hajidishu/nekopass/releases/download'", "DEFAULT_DOWNLOAD_BASE='$($DownloadBase.TrimEnd('/'))'")
+    $installer = $installer.Replace('# PACKAGED_MANAGER', $payload).Replace('# PACKAGED_UPDATER', '').Replace("DEFAULT_DOWNLOAD_BASE='https://github.com/hajidishu/nekopass/releases/download'", "DEFAULT_DOWNLOAD_BASE='$($DownloadBase.TrimEnd('/'))'")
     $installer = $installer.Replace('v0.19.4', $Version)
     [IO.File]::WriteAllText((Join-Path $assets 'install-panel.sh'), $installer, $utf8)
     $env:GOOS = 'linux'; $env:CGO_ENABLED = '0'

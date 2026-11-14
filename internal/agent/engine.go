@@ -17,11 +17,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/nekopass/nekopass/internal/ddns"
-	"github.com/nekopass/nekopass/internal/iprecovery"
 	"github.com/nekopass/nekopass/internal/networkpolicy"
 	pb "github.com/nekopass/nekopass/internal/protocol"
-	"github.com/nekopass/nekopass/internal/release"
 	"github.com/quic-go/quic-go/brutal"
 	"golang.org/x/time/rate"
 	"google.golang.org/protobuf/proto"
@@ -61,7 +58,6 @@ type Engine struct {
 	maxConnections   atomic.Int64
 	node             atomic.Pointer[pb.NodeConfig]
 	targetPolicy     atomic.Pointer[networkpolicy.Policy]
-	probe            atomic.Pointer[pb.Probe]
 	connections      atomic.Int64
 	tunnel           *tunnelListener
 	tunnelPolicy     atomic.Pointer[tunnelPolicy]
@@ -71,22 +67,6 @@ type Engine struct {
 	h2Certificate    atomic.Pointer[tls.Certificate]
 	acmeAck          atomic.Int64
 	challengeServers map[int32]*http.Server
-	ipRecoveryConfig *pb.IPRecoveryConfig
-	ipRecoveryCancel context.CancelFunc
-	ipRecoveryDone   <-chan struct{}
-	ipRecoveryStatus atomic.Pointer[pb.IPRecoveryStatus]
-	ipRecoveryAPI    func() iprecovery.API
-	ipRecoveryProbe  func(context.Context, string) (bool, error)
-	ddnsWake         chan struct{}
-	publicIPWake     chan struct{}
-	ddnsConfig       *pb.DDNSConfig
-	ddnsCancel       context.CancelFunc
-	ddnsStatus       atomic.Pointer[pb.DDNSStatus]
-	publicIP         atomic.Pointer[pb.PublicIPStatus]
-	publicIPCancel   context.CancelFunc
-	ddnsClient       func() *ddns.Client
-	updateDirectory  string
-	updateStatus     *pb.UpdateStatus
 }
 
 var buffers = sync.Pool{New: func() any { b := make([]byte, BufferSize); return &b }}
@@ -100,11 +80,6 @@ func NewEngine(s *State, maxConnections int64) (*Engine, error) {
 	e.h2.randomUDP.brutalBudget = e.brutalBudget
 	e.udpListeners = map[int64]*udpListener{}
 	e.udpNonces = map[string]time.Time{}
-	e.ddnsClient = ddns.NewClient
-	e.ipRecoveryAPI = iprecovery.NewClient
-	e.ipRecoveryProbe = iprecovery.Ping
-	e.ddnsWake = make(chan struct{}, 1)
-	e.publicIPWake = make(chan struct{}, 1)
 	e.maxConnections.Store(maxConnections)
 	users, err := s.LoadUsers()
 	if err != nil {
@@ -185,9 +160,6 @@ func (e *Engine) Apply(c *pb.ControlMessage) error {
 	if err := e.state.SaveConfig(c); err != nil {
 		return err
 	}
-	if err := e.configureUpdate(c.Update); err != nil {
-		return err
-	}
 	restartListeners := false
 	if c.Node != nil {
 		old := e.node.Load()
@@ -198,13 +170,6 @@ func (e *Engine) Apply(c *pb.ControlMessage) error {
 		}
 		e.brutalBudget.SetRate(c.Node.BandwidthUpBps)
 		e.maxConnections.Store(c.Node.MaxConnections)
-		e.configureIPRecovery(c.Node.IpRecovery)
-		e.configureDDNS(c.Node.Ddns)
-		e.configurePublicIP(c.Node.ReportPublicIp && (c.Node.Ddns == nil || !c.Node.Ddns.Enabled))
-	} else {
-		e.configureIPRecovery(nil)
-		e.configureDDNS(nil)
-		e.configurePublicIP(false)
 	}
 
 	wantedUsers := map[int64]bool{}
@@ -548,7 +513,7 @@ func (e *Engine) Report() (*pb.AgentMessage, error) {
 		a.mu.Lock()
 		defer a.mu.Unlock()
 	}
-	r := &pb.AgentMessage{ProtocolVersion: pb.CurrentVersion, AgentVersion: release.Version, UpdateSupported: e.updateDirectory != "", UpdateStatus: e.readUpdateStatus(), AcmeAck: e.acmeAck.Load(), Probe: e.probe.Load(), InstanceId: e.state.Instance, AppliedRevision: e.revision, Error: e.syncError, ActiveConnections: e.connections.Load(), DdnsStatus: e.ddnsStatus.Load(), PublicIp: e.publicIP.Load(), IpRecoveryStatus: e.ipRecoveryStatus.Load()}
+	r := &pb.AgentMessage{ProtocolVersion: pb.CurrentVersion, AcmeAck: e.acmeAck.Load(), InstanceId: e.state.Instance, AppliedRevision: e.revision, Error: e.syncError, ActiveConnections: e.connections.Load()}
 	pending, err := e.state.RestorePending()
 	if err != nil {
 		return nil, err
@@ -598,18 +563,6 @@ func (e *Engine) Report() (*pb.AgentMessage, error) {
 func (e *Engine) Close() {
 	e.mu.Lock()
 	e.closed = true
-	if e.ipRecoveryCancel != nil {
-		e.ipRecoveryCancel()
-		e.ipRecoveryCancel = nil
-	}
-	if e.publicIPCancel != nil {
-		e.publicIPCancel()
-		e.publicIPCancel = nil
-	}
-	if e.ddnsCancel != nil {
-		e.ddnsCancel()
-		e.ddnsCancel = nil
-	}
 	if e.tunnel != nil {
 		e.tunnel.cancel()
 		e.tunnel.ln.Close()

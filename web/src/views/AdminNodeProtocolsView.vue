@@ -38,7 +38,6 @@ function securitySaved(config:NodeSecurityInput){applyNodeSecurity(nodeForm,conf
   <nav class="admin-resource-tabs">
     <a href="/admin/nodes">节点管理</a>
     <a :href="`/admin/nodes/${editID}/protocols`" class="active">连接配置</a>
-    <a :href="`/admin/nodes/${editID}/ddns`">DDNS</a>
     </nav>
   <section class="surface">
     <div class="section-header">

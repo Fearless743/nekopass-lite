@@ -4,8 +4,6 @@ set -Eeuo pipefail
 umask 077
 write_manager_payload() { return 1; }
 # PACKAGED_MANAGER
-write_updater_payload() { return 1; }
-# PACKAGED_UPDATER
 DEFAULT_DOWNLOAD_BASE='https://github.com/hajidishu/nekopass/releases/download'
 RELEASE_VERSION='v0.19.4'; DOWNLOAD_BASE=$DEFAULT_DOWNLOAD_BASE; PACKAGE_URL=''; PACKAGE=''; SOURCE_DIR=''
 SERVICE='nekopass'; HOST=''; AGENT_HOST=''; AGENT_PORT=''; HTTP_PORT=8080; GRPC_PORT=9443; DB_PORT=''; PG_VERSION=''
@@ -216,10 +214,6 @@ if ! write_manager_payload > "$WORK/nekopassctl"; then
  else companion="$(dirname -- "${BASH_SOURCE[0]}")/nekopassctl.sh"; [[ -f "$companion" ]] || die '缺少服务管理工具，请使用完整发布安装脚本'; tr -d '\r' < "$companion" > "$WORK/nekopassctl"; fi
 fi
 bash -n "$WORK/nekopassctl"
-if ! write_updater_payload > "$WORK/nekopass-update"; then
- if [[ -f "$WORK/release/bin/nekopass-update" ]]; then cp "$WORK/release/bin/nekopass-update" "$WORK/nekopass-update"
- else companion="$(dirname -- "${BASH_SOURCE[0]}")/nekopass-update.py"; [[ -f "$companion" ]] || die '缺少更新工具，请使用完整发布安装脚本'; cp "$companion" "$WORK/nekopass-update"; fi
-fi
 if [[ "$TLS_MODE" == existing ]]; then
  [[ -f "$TLS_CERT" && -f "$TLS_KEY" ]] || die '节点连接证书或私钥不存在'
  openssl x509 -in "$TLS_CERT" -checkend 0 -noout >/dev/null || die '证书已过期或无效'
@@ -304,7 +298,6 @@ if ((REINSTALL)); then
   else read -r -p "输入服务名 $SERVICE 确认清空：" answer </dev/tty || die '无法交互确认，请使用 --reinstall --yes'; fi
   [[ "$answer" == "$SERVICE" ]] || die '已取消清空重装，数据库未修改'
  fi
- systemctl stop "$SERVICE-update.path" "$SERVICE-update.service" 2>/dev/null || true
 fi
 # Stop only the selected panel, after validating inputs and confirming reset.
 if systemctl is-active --quiet "$SERVICE"; then systemctl stop "$SERVICE"; fi
@@ -376,8 +369,6 @@ UNIT
 install -m 644 "$WORK/panel.service" "$UNIT"
 install -d -m 755 /usr/local/bin
 install -m 755 "$WORK/nekopassctl" /usr/local/bin/nekopassctl
-install -m 755 "$WORK/nekopass-update" "$BASE/bin/nekopass-update"
-"$BASE/bin/nekopass-update" --service "$SERVICE" --setup-panel
 run_panel() { systemd-run --quiet --wait --pipe --collect -p "User=$SERVICE" -p "EnvironmentFile=$CONFIG/control.env" -- "$BASE/bin/nekopass" "$@"; }
 run_panel -mode migrate
 run_panel -mode init-settings < "$WORK/settings.json"

@@ -61,7 +61,7 @@ func TestNodeKeyVisibleToAdminAndStable(t *testing.T) {
 			t.Fatal("non-admin node management access", got.Code)
 		}
 	}
-	for _, path := range []string{"rule-nodes", "node-status", "site"} {
+	for _, path := range []string{"rule-nodes", "site"} {
 		got := request(uid, path, "GET", nil)
 		if got.Code != 200 || strings.Contains(got.Body.String(), node.Token) {
 			t.Fatal("user-facing node data includes key")

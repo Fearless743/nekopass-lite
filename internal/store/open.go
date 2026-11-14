@@ -10,127 +10,7 @@ import (
 //go:embed schema.sql
 var schema string
 
-//go:embed migration002.sql
-var migration002 string
-
-//go:embed migration003.sql
-var migration003 string
-
-//go:embed migration004.sql
-var migration004 string
-
-//go:embed migration005.sql
-var migration005 string
-
-//go:embed migration006.sql
-var migration006 string
-
-//go:embed migration007.sql
-var migration007 string
-
-//go:embed migration008.sql
-var migration008 string
-
-//go:embed migration009.sql
-var migration009 string
-
-//go:embed migration010.sql
-var migration010 string
-
-//go:embed migration011.sql
-var migration011 string
-
-//go:embed migration012.sql
-var migration012 string
-
-//go:embed migration013.sql
-var migration013 string
-
-//go:embed migration014.sql
-var migration014 string
-
-//go:embed migration015.sql
-var migration015 string
-
-//go:embed migration016.sql
-var migration016 string
-
-//go:embed migration017.sql
-var migration017 string
-
-//go:embed migration018.sql
-var migration018 string
-
-//go:embed migration019.sql
-var migration019 string
-
-//go:embed migration020.sql
-var migration020 string
-
-//go:embed migration021.sql
-var migration021 string
-
-//go:embed migration022.sql
-var migration022 string
-
-//go:embed migration023.sql
-var migration023 string
-
-//go:embed migration024.sql
-var migration024 string
-
-//go:embed migration025.sql
-var migration025 string
-
-//go:embed migration026.sql
-var migration026 string
-
-//go:embed migration027.sql
-var migration027 string
-
-//go:embed migration028.sql
-var migration028 string
-
-//go:embed migration029.sql
-var migration029 string
-
-//go:embed migration030.sql
-var migration030 string
-
-//go:embed migration031.sql
-var migration031 string
-
-//go:embed migration032.sql
-var migration032 string
-
-//go:embed migration033.sql
-var migration033 string
-
-//go:embed migration034.sql
-var migration034 string
-
-//go:embed migration035.sql
-var migration035 string
-
-//go:embed migration036.sql
-var migration036 string
-
-//go:embed migration037.sql
-var migration037 string
-
-//go:embed migration038.sql
-var migration038 string
-
-//go:embed migration039.sql
-var migration039 string
-
-//go:embed migration040.sql
-var migration040 string
-
-//go:embed migration041.sql
-var migration041 string
-
-const CurrentSchemaVersion = 41
+const CurrentSchemaVersion = 1
 
 func CheckSchema(ctx context.Context, p *pgxpool.Pool) error {
 	var version int
@@ -153,7 +33,13 @@ func Open(ctx context.Context, url string) (*pgxpool.Pool, error) {
 	return p, nil
 }
 
+// Migrate installs the current schema on an empty database. This build does not
+// upgrade databases created by older releases; recreate the database instead.
 func Migrate(ctx context.Context, p *pgxpool.Pool) error {
+	var installed bool
+	if err := p.QueryRow(ctx, "SELECT to_regclass('public.schema_version') IS NOT NULL").Scan(&installed); err != nil {
+		return err
+	}
 	tx, err := p.Begin(ctx)
 	if err != nil {
 		return err
@@ -162,212 +48,18 @@ func Migrate(ctx context.Context, p *pgxpool.Pool) error {
 	if _, err = tx.Exec(ctx, "SELECT pg_advisory_xact_lock(734291)"); err != nil {
 		return err
 	}
+	if installed {
+		var version int
+		if err = tx.QueryRow(ctx, "SELECT max(version) FROM schema_version").Scan(&version); err != nil {
+			return err
+		}
+		if version != CurrentSchemaVersion {
+			return errors.New("unsupported database schema; recreate the database with this release")
+		}
+		return tx.Commit(ctx)
+	}
 	if _, err = tx.Exec(ctx, schema); err != nil {
 		return err
-	}
-	var version int
-	if err = tx.QueryRow(ctx, "SELECT max(version) FROM schema_version").Scan(&version); err != nil {
-		return err
-	}
-	if version < 2 {
-		if _, err = tx.Exec(ctx, migration002); err != nil {
-			return err
-		}
-	}
-	if version < 3 {
-		if _, err = tx.Exec(ctx, migration003); err != nil {
-			return err
-		}
-	}
-	if version < 4 {
-		if _, err = tx.Exec(ctx, migration004); err != nil {
-			return err
-		}
-	}
-	if version < 5 {
-		if _, err = tx.Exec(ctx, migration005); err != nil {
-			return err
-		}
-	}
-	if version < 6 {
-		if _, err = tx.Exec(ctx, migration006); err != nil {
-			return err
-		}
-	}
-	if version < 7 {
-		if _, err = tx.Exec(ctx, migration007); err != nil {
-			return err
-		}
-	}
-	if version < 8 {
-		if _, err = tx.Exec(ctx, migration008); err != nil {
-			return err
-		}
-	}
-	if version < 9 {
-		if _, err = tx.Exec(ctx, migration009); err != nil {
-			return err
-		}
-	}
-	if version < 10 {
-		if _, err = tx.Exec(ctx, migration010); err != nil {
-			return err
-		}
-	}
-	if version < 11 {
-		if _, err = tx.Exec(ctx, migration011); err != nil {
-			return err
-		}
-	}
-	if version < 12 {
-		if _, e := tx.Exec(ctx, migration012); e != nil {
-			return e
-		}
-	}
-	if version < 13 {
-		if _, err = tx.Exec(ctx, migration013); err != nil {
-			return err
-		}
-	}
-	if version < 14 {
-		if _, err = tx.Exec(ctx, migration014); err != nil {
-			return err
-		}
-	}
-	if version < 15 {
-		if _, err = tx.Exec(ctx, migration015); err != nil {
-			return err
-		}
-	}
-	if version < 16 {
-		if _, err = tx.Exec(ctx, migration016); err != nil {
-			return err
-		}
-	}
-	if version < 17 {
-		if _, err = tx.Exec(ctx, migration017); err != nil {
-			return err
-		}
-	}
-	if version < 18 {
-		if _, err = tx.Exec(ctx, migration018); err != nil {
-			return err
-		}
-	}
-	if version < 19 {
-		if _, err = tx.Exec(ctx, migration019); err != nil {
-			return err
-		}
-	}
-	if version < 20 {
-		if _, err = tx.Exec(ctx, migration020); err != nil {
-			return err
-		}
-	}
-	if version < 21 {
-		if _, err = tx.Exec(ctx, migration021); err != nil {
-			return err
-		}
-	}
-	if version < 22 {
-		if _, err = tx.Exec(ctx, migration022); err != nil {
-			return err
-		}
-	}
-	if version < 23 {
-		if _, err = tx.Exec(ctx, migration023); err != nil {
-			return err
-		}
-	}
-	if version < 24 {
-		if _, err = tx.Exec(ctx, migration024); err != nil {
-			return err
-		}
-	}
-	if version < 25 {
-		if _, err = tx.Exec(ctx, migration025); err != nil {
-			return err
-		}
-	}
-	if version < 26 {
-		if _, err = tx.Exec(ctx, migration026); err != nil {
-			return err
-		}
-	}
-	if version < 27 {
-		if _, err = tx.Exec(ctx, migration027); err != nil {
-			return err
-		}
-	}
-	if version < 28 {
-		if _, err = tx.Exec(ctx, migration028); err != nil {
-			return err
-		}
-	}
-	if version < 29 {
-		if _, err = tx.Exec(ctx, migration029); err != nil {
-			return err
-		}
-	}
-	if version < 30 {
-		if _, err = tx.Exec(ctx, migration030); err != nil {
-			return err
-		}
-	}
-	if version < 31 {
-		if _, err = tx.Exec(ctx, migration031); err != nil {
-			return err
-		}
-	}
-	if version < 32 {
-		if _, err = tx.Exec(ctx, migration032); err != nil {
-			return err
-		}
-	}
-	if version < 33 {
-		if _, err = tx.Exec(ctx, migration033); err != nil {
-			return err
-		}
-	}
-	if version < 34 {
-		if _, err = tx.Exec(ctx, migration034); err != nil {
-			return err
-		}
-	}
-	if version < 35 {
-		if _, err = tx.Exec(ctx, migration035); err != nil {
-			return err
-		}
-	}
-	if version < 36 {
-		if _, err = tx.Exec(ctx, migration036); err != nil {
-			return err
-		}
-	}
-	if version < 37 {
-		if _, err = tx.Exec(ctx, migration037); err != nil {
-			return err
-		}
-	}
-	if version < 38 {
-		if _, err = tx.Exec(ctx, migration038); err != nil {
-			return err
-		}
-	}
-	if version < 39 {
-		if _, err = tx.Exec(ctx, migration039); err != nil {
-			return err
-		}
-	}
-	if version < 40 {
-		if _, err = tx.Exec(ctx, migration040); err != nil {
-			return err
-		}
-	}
-	if version < 41 {
-		if _, err = tx.Exec(ctx, migration041); err != nil {
-			return err
-		}
 	}
 	return tx.Commit(ctx)
 }

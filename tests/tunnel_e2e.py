@@ -13,8 +13,7 @@ class Server(socketserver.ThreadingTCPServer):allow_reuse_address=True;daemon_th
 def node(name, **changes):
  return {'name':name,'enabled':True,'public_address':'127.0.0.1','notes':'','group_ids':[],
   'listen_host':'127.0.0.1','port_min':21000,'port_max':21999,'max_connections':1000,
-  'dial_timeout_seconds':8,'idle_timeout_seconds':300,'probe_interval_seconds':5,
-  'disk_path':'/','network_interfaces':[],'allow_direct':True,'tunnel_exit_enabled':False,
+  'dial_timeout_seconds':8,'idle_timeout_seconds':300,'allow_direct':True,'tunnel_exit_enabled':False,
   'tunnel_protocol':'plain_tcp','tunnel_listen_host':'127.0.0.1','tunnel_listen_port':0,
   'tunnel_public_host':'','allowed_ingress_ids':[],**changes}
 def start_agent(name,token):
@@ -26,9 +25,8 @@ def main():
  exitnode=node('tunnel-e2e-egress',tunnel_exit_enabled=True,tunnel_listen_port=31199,tunnel_public_host='127.0.0.1',allowed_ingress_ids=[entryid['id']]);exitid=api('admin/nodes',exitnode,'POST');exitnode['token']=exitid['token']
  ingress_group=api('admin/node-groups',{'name':'tunnel-e2e-entry-group','enabled':True,'description':'','sort_order':0,'node_ids':[entryid['id']]},'POST')['id']
  exit_group=api('admin/node-groups',{'name':'tunnel-e2e-exit-group','enabled':True,'description':'','sort_order':0,'node_ids':[exitid['id']]},'POST')['id']
- plan=api('admin/plans',{'name':'tunnel-e2e-plan','enabled':True,'description':'','prices':{},'speed_mbps':100,'quota_bytes':128<<20,'max_rules':10,'max_connections':100,'ip_limit':0,'rule_speed_mbps':0,'rule_ip_limit':0,'rule_connection_limit':0,'duration_days':30,'node_group_ids':[ingress_group,exit_group]},'POST')['id']
  user={'username':'tunnel-e2e-user','password':secrets.token_hex(20)}
- uid=api('admin/users',{**user,'enabled':True,'plan_id':plan},'POST')['id']
+ uid=api('admin/users',{**user,'enabled':True,'speed_mbps':100,'quota_bytes':128<<20,'max_rules':10,'max_connections':100,'node_group_ids':[ingress_group,exit_group]},'POST')['id']
  uc=client();api('login',user,'POST',uc)
  def own(path,body=None,method=None):return api(path,body,method,uc)
  start_agent('ingress',entryid['token']);start_agent('exit',exitid['token'])

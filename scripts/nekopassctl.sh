@@ -21,8 +21,6 @@ Nekopass 服务管理（Linux / systemd）
   sudo nekopassctl agent configure         填写主控 HTTP/HTTPS 地址和节点密钥
   sudo nekopassctl panel edit-service      编辑 systemd 服务覆盖配置
   sudo nekopassctl panel reset-password    重新生成管理员密码，并注销旧会话
-  sudo nekopassctl agent check-update      检查 GitHub 最新版本（panel 也可用）
-  sudo nekopassctl agent update            更新并重启服务，保留配置和状态
 
 也支持指定独立节点服务：nekopassctl nekopass-agent-test status
 这里的启动/停止/重启只作用于服务，不会重启或关闭服务器。
@@ -138,20 +136,6 @@ run_action() {
   configure) configure_agent;;
   reset-password) reset_password;;
   edit-service) systemctl edit "$SERVICE.service" && systemctl daemon-reload;;
-  check-update|update)
-   local base updater
-   case "$SERVICE" in nekopass|nekopass-agent) base=/opt/nekopass;; *) base="/opt/$SERVICE";; esac
-   updater="$base/bin/nekopass-update"
-   [[ -x "$updater" ]] || { fail '请先使用新版安装脚本安装更新服务。'; return 1; }
-   if [[ "$1" == check-update ]]; then
-    "$updater" --service "$SERVICE" --check
-   elif [[ "$SERVICE" != nekopass-agent* && -e "/var/lib/$SERVICE/update-request.json" ]]; then
-    # Panel and command-line updates share the same command. A queued panel
-    # request supplies the pinned version and receives durable progress/result.
-    "$updater" --service "$SERVICE" --request
-   else
-    "$updater" --service "$SERVICE"
-   fi;;
   *) fail "未知操作：$1"; usage; return 1;;
  esac
 }
@@ -162,7 +146,6 @@ service_menu() {
   printf '运行状态：%s  开机自启：%s\n配置：%s\n' "$(systemctl is-active "$SERVICE.service" 2>/dev/null)" "$(systemctl is-enabled "$SERVICE.service" 2>/dev/null)" "$CONFIG"
   printf '1 启动  2 停止  3 重启  4 查看状态\n5 开启自启  6 关闭自启  7 最近日志  8 实时日志\n9 编辑配置  10 填写节点连接信息  11 编辑服务配置\n'
   [[ "$CONFIG" != */control.env ]] || printf '12 重新生成管理员密码\n'
-  printf '13 检查更新  14 更新到最新版本\n'
   printf '0 返回/退出\n请选择：'
   read -r choice || return 0
   case "$choice" in
@@ -170,8 +153,7 @@ service_menu() {
    5) action=enable;; 6) action=disable;; 7) action=logs;; 8) action=follow;;
    9) action=edit;; 10) action=configure;; 11) action=edit-service;;
    12) action=reset-password;;
-   13) action=check-update;; 14) action=update;;
-   *) printf '请输入菜单中的编号。\n'; continue;;
+    *) printf '请输入菜单中的编号。\n'; continue;;
   esac
   # Ctrl+C leaves the current operation (e.g. live logs), keeping the menu usable.
   (trap - INT; run_action "$action") || printf '操作已结束，可查看日志了解服务情况。\n'

@@ -16,46 +16,28 @@ import (
 	"net/url"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/nekopass/nekopass/internal/payment"
-	"github.com/nekopass/nekopass/internal/payment/epay"
-	pb "github.com/nekopass/nekopass/internal/protocol"
 	"github.com/nekopass/nekopass/internal/registration"
-	"github.com/nekopass/nekopass/internal/release"
 	"github.com/nekopass/nekopass/internal/store"
-	"github.com/nekopass/nekopass/internal/telegram"
 	"golang.org/x/crypto/bcrypt"
 	"golang.org/x/time/rate"
 )
 
 type Server struct {
-	telegramFactory func(string) telegram.API
-	telegramStatus  atomic.Pointer[telegramStatus]
-	panelProbe      atomic.Pointer[pb.Probe]
-	mailWorkers     chan struct{}
-	sendMail        func(context.Context, registration.SMTP, string, string, string) error
-	payments        *payment.Registry
-	Pool            *pgxpool.Pool
-	query           *store.Queries
-	loginMu         sync.Mutex
-	loginBuckets    map[string]*loginBucket
-	loginPruned     time.Time
-	loginBucketKey  [32]byte
-	loginWorkers    chan struct{}
-	trustedProxies  []*net.IPNet
-	releaseMu       sync.Mutex
-	releaseClient   *release.Client
-	releaseChecked  time.Time
-	releaseInfo     release.Info
-	releaseError    error
-	panelUpdateMu   sync.Mutex
-	panelUpdateDir  string
-	settingsMu      sync.Mutex
-	agentListener   *agentListener
+	mailWorkers    chan struct{}
+	Pool           *pgxpool.Pool
+	query          *store.Queries
+	loginMu        sync.Mutex
+	loginBuckets   map[string]*loginBucket
+	loginPruned    time.Time
+	loginBucketKey [32]byte
+	loginWorkers   chan struct{}
+	trustedProxies []*net.IPNet
+	settingsMu     sync.Mutex
+	agentListener  *agentListener
 }
 type loginBucket struct {
 	limiter *rate.Limiter
@@ -68,11 +50,7 @@ func New(p *pgxpool.Pool) *Server {
 	if _, err := rand.Read(s.loginBucketKey[:]); err != nil {
 		panic(err)
 	}
-	s.telegramFactory = telegram.NewClient
 	s.mailWorkers = make(chan struct{}, 4)
-	s.sendMail = registration.SendCode
-	s.releaseClient = release.NewClient()
-	s.payments = payment.NewRegistry(epay.Driver{})
 	_ = s.SetTrustedProxies("127.0.0.0/8,::1/128")
 	return s
 }
@@ -135,53 +113,20 @@ func (s *Server) Handler(static http.Handler) http.Handler {
 	api.HandleFunc("POST /api/v1/admin/users/{id}/logout", s.logoutUser)
 	api.HandleFunc("GET /api/v1/admin/settings", s.getSettings)
 	api.HandleFunc("GET /api/v1/admin/dashboard", s.adminDashboard)
-	api.HandleFunc("GET /api/v1/admin/updates", s.checkUpdates)
-	api.HandleFunc("GET /api/v1/admin/updates/panel", s.panelUpdateStatus)
-	api.HandleFunc("POST /api/v1/admin/updates/panel", s.updatePanel)
-	api.HandleFunc("POST /api/v1/admin/nodes/{id}/update", s.updateNode)
 	api.HandleFunc("PUT /api/v1/admin/settings", s.saveSettings)
-	api.HandleFunc("POST /api/v1/admin/settings/telegram/test", s.testTelegramMessage)
 	api.HandleFunc("POST /api/v1/admin/settings/api-key", s.rotateAPIKey)
 	api.HandleFunc("DELETE /api/v1/admin/settings/api-key", s.revokeAPIKey)
 	api.HandleFunc("POST /api/v1/admin/nodes/{id}/install-command", s.nodeInstallCommand)
-	api.HandleFunc("GET /api/v1/admin/nodes/{id}/ip-recovery", s.nodeIPRecovery)
-	api.HandleFunc("PUT /api/v1/admin/nodes/{id}/ip-recovery", s.saveNodeIPRecovery)
-	api.HandleFunc("POST /api/v1/admin/nodes/{id}/ip-recovery/reset", s.resetNodeIPRecovery)
-	api.HandleFunc("GET /api/v1/admin/nodes/{id}/ddns", s.nodeDDNS)
 	api.HandleFunc("GET /api/v1/admin/nodes/{id}/protocols", s.nodeProtocols)
 	api.HandleFunc("PUT /api/v1/admin/nodes/{id}/protocols", s.saveNodeProtocols)
 	api.HandleFunc("PUT /api/v1/admin/nodes/{id}/basic", s.saveNodeBasic)
-	api.HandleFunc("PUT /api/v1/admin/nodes/{id}/ddns", s.saveNodeDDNS)
-	api.HandleFunc("POST /api/v1/admin/nodes/{id}/ddns/run", s.runNodeDDNS)
 	api.HandleFunc("GET /api/v1/profile", s.profile)
-	api.HandleFunc("GET /api/v1/profile/auto-renew", s.autoRenew)
-	api.HandleFunc("PUT /api/v1/profile/auto-renew", s.saveAutoRenew)
-	api.HandleFunc("GET /api/v1/wallet", s.wallet)
-	api.HandleFunc("GET /api/v1/orders", s.orders)
-	api.HandleFunc("GET /api/v1/admin/orders", s.adminOrders)
-	api.HandleFunc("GET /api/v1/admin/orders/{id}", s.adminOrder)
-	api.HandleFunc("GET /api/v1/referrals", s.referrals)
-	api.HandleFunc("GET /api/v1/tickets/config", s.ticketConfig)
-	api.HandleFunc("GET /api/v1/tickets/captcha", s.ticketCaptcha)
-	api.HandleFunc("GET /api/v1/tickets", s.tickets)
-	api.HandleFunc("POST /api/v1/tickets", s.createTicket)
-	api.HandleFunc("GET /api/v1/tickets/{id}", s.ticket)
-	api.HandleFunc("POST /api/v1/tickets/{id}/messages", s.replyTicket)
-	api.HandleFunc("PUT /api/v1/tickets/{id}/status", s.ticketStatus)
-	api.HandleFunc("GET /api/v1/admin/tickets", s.tickets)
-	api.HandleFunc("GET /api/v1/admin/tickets/{id}", s.ticket)
-	api.HandleFunc("POST /api/v1/admin/tickets/{id}/messages", s.replyTicket)
-	api.HandleFunc("PUT /api/v1/admin/tickets/{id}/status", s.ticketStatus)
 	api.HandleFunc("GET /api/v1/announcements", s.announcements)
 	api.HandleFunc("GET /api/v1/announcements/{id}", s.announcementDetail)
 	api.HandleFunc("GET /api/v1/admin/announcements", s.announcements)
 	api.HandleFunc("POST /api/v1/admin/announcements", s.saveNotice)
 	api.HandleFunc("PUT /api/v1/admin/announcements/{id}", s.saveNotice)
 	api.HandleFunc("DELETE /api/v1/admin/announcements/{id}", s.deleteNotice)
-	api.HandleFunc("GET /api/v1/shop/plans", s.shopPlans)
-	api.HandleFunc("POST /api/v1/shop/quote", s.shopQuote)
-	api.HandleFunc("POST /api/v1/shop/purchase", s.shopPurchase)
-	api.HandleFunc("POST /api/v1/admin/users/{id}/recharge", s.adminRecharge)
 	api.HandleFunc("GET /api/v1/admin/users", s.adminOnly(s.users))
 	api.HandleFunc("POST /api/v1/admin/users", s.saveUser)
 	api.HandleFunc("PUT /api/v1/admin/users/{id}", s.saveUser)
@@ -215,19 +160,6 @@ func (s *Server) Handler(static http.Handler) http.Handler {
 	api.HandleFunc("PUT /api/v1/admin/nodes/{id}/tls-inbounds", s.saveTLSInbound)
 	api.HandleFunc("DELETE /api/v1/admin/nodes/{id}/tls-inbounds", s.deleteTLSInbound)
 	api.HandleFunc("PUT /api/v1/admin/nodes/{id}/tls-policy", s.tlsInboundPolicy)
-	api.HandleFunc("GET /api/v1/node-status", s.nodeStatus)
-	api.HandleFunc("GET /api/v1/node-status/{id}/history", s.nodeProbeHistory)
-	api.HandleFunc("GET /api/v1/admin/plans", s.plans)
-	api.HandleFunc("GET /api/v1/admin/payment-interfaces", s.paymentInterfaces)
-	api.HandleFunc("GET /api/v1/admin/payment-methods", s.paymentMethods)
-	api.HandleFunc("POST /api/v1/admin/payment-methods", s.savePaymentMethod)
-	api.HandleFunc("PUT /api/v1/admin/payment-methods/{id}", s.savePaymentMethod)
-	api.HandleFunc("DELETE /api/v1/admin/payment-methods/{id}", s.deletePaymentMethod)
-	api.HandleFunc("POST /api/v1/wallet/recharge", s.createRecharge)
-	api.HandleFunc("POST /api/v1/orders/{id}/pay", s.payRechargeOrder)
-	api.HandleFunc("POST /api/v1/admin/plans", s.savePlan)
-	api.HandleFunc("PUT /api/v1/admin/plans/{id}", s.savePlan)
-	api.HandleFunc("DELETE /api/v1/admin/plans/{id}", s.deletePlan)
 	api.HandleFunc("GET /api/v1/admin/nodes", s.nodes)
 	api.HandleFunc("POST /api/v1/admin/nodes", s.saveNode)
 	api.HandleFunc("PUT /api/v1/admin/nodes/{id}", s.saveNode)
@@ -253,17 +185,8 @@ func (s *Server) Handler(static http.Handler) http.Handler {
 
 	root := http.NewServeMux()
 	root.HandleFunc("POST /api/v1/login", s.login)
-	root.HandleFunc("GET /api/v1/registration", s.registrationConfig)
-	root.HandleFunc("GET /api/v1/registration/captcha", s.captcha)
-	root.HandleFunc("POST /api/v1/registration/email-code", s.sendRegistrationCode)
-	root.HandleFunc("POST /api/v1/register", s.register)
 	root.HandleFunc("GET /api/v1/site", s.publicSite)
 	root.HandleFunc("POST /api/v1/node-install/redeem", s.redeemInstall)
-	root.HandleFunc("GET /api/v1/payments/notify/{interface}/{methodID}", s.paymentNotify)
-	root.HandleFunc("POST /api/v1/payments/notify/{interface}/{methodID}", s.paymentNotify)
-	root.HandleFunc("GET /api/v1/payments/return", func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, "/orders?payment=returned", http.StatusSeeOther)
-	})
 	root.Handle("/api/", s.auth(api))
 	root.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(r.Context(), time.Second)
@@ -281,7 +204,7 @@ func (s *Server) Handler(static http.Handler) http.Handler {
 		w.Header().Set("Referrer-Policy", "same-origin")
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'")
-		if r.Method != "GET" && r.Method != "HEAD" && !paymentCallbackPath(r) {
+		if r.Method != "GET" && r.Method != "HEAD" {
 			if site := r.Header.Get("Sec-Fetch-Site"); site == "cross-site" || site == "same-site" {
 				fail(w, 403, "来源不匹配")
 				return

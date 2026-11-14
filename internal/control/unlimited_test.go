@@ -15,7 +15,7 @@ func TestUnlimitedPersonalResourcesAndLateReports(t *testing.T) {
 	if err := f.p.QueryRow(ctx, "INSERT INTO nodes(name,token_hash) VALUES($1,$2) RETURNING id", Secret(), Secret()).Scan(&node); err != nil {
 		t.Fatal(err)
 	}
-	group := testAuthorize(t, f.p, f.user, node)
+	testAuthorize(t, f.p, f.user, node)
 	t.Cleanup(func() {
 		f.p.Exec(ctx, "DELETE FROM rules WHERE node_id=$1", node)
 		f.p.Exec(ctx, "DELETE FROM grants WHERE node_id=$1", node)
@@ -24,7 +24,7 @@ func TestUnlimitedPersonalResourcesAndLateReports(t *testing.T) {
 	path := fmt.Sprintf("admin/users/%d", f.user)
 	edit := func(changes map[string]any, code int) {
 		t.Helper()
-		body := map[string]any{"username": Secret(), "enabled": true, "plan_id": f.plan}
+		body := map[string]any{"username": Secret(), "enabled": true}
 		for k, v := range changes {
 			body[k] = v
 		}
@@ -53,12 +53,6 @@ func TestUnlimitedPersonalResourcesAndLateReports(t *testing.T) {
 	f.p.QueryRow(ctx, "SELECT sum(traffic_bytes)::bigint FROM usage_events WHERE user_id=$1", f.user).Scan(&events)
 	if events != 1234 {
 		t.Fatal("unlimited usage replay double-counted")
-	}
-	// Editing plan defaults must leave the user's unlimited entitlement intact.
-	securityStatus(t, f.request(f.admin, fmt.Sprintf("admin/plans/%d", f.plan), "PUT", PlanInput{Name: Secret(), Enabled: true, SpeedMbps: 1, QuotaBytes: 17 << 20, MaxRules: 1, MaxConnections: 2, NodeGroupIDs: []int64{group}}), 200)
-	out, err = stream.exchange(ctx, f.p, node, report)
-	if err != nil || !out.Users[0].QuotaUnlimited {
-		t.Fatal("plan edit changed personal limits", err)
 	}
 	edit(map[string]any{"quota_bytes": 17 << 20, "speed_mbps": 1, "max_connections": 2}, 200)
 	usage.UnlimitedSpent = 32 << 20

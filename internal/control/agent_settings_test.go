@@ -125,7 +125,7 @@ func TestOnlineNodeReceivesEndpointAfterSettingsSave(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	report := &pb.AgentMessage{InstanceId: Secret(), ProtocolVersion: 12, AgentVersion: "dev"}
+	report := &pb.AgentMessage{InstanceId: Secret(), ProtocolVersion: 12}
 	if err := stream.Send(report); err != nil {
 		t.Fatal(err)
 	}

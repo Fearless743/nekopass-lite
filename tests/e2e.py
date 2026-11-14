@@ -4,7 +4,7 @@ NEKOPASS_E2E_ADMIN_FILE points at JSON {username,password}.
 This creates test users/nodes/rules, restarts the agent, and stops/restarts control.
 No external network traffic is generated.
 """
-import concurrent.futures, http.cookiejar, json, os, pathlib, socket, socketserver, ssl, subprocess, threading, time, urllib.request, urllib.error, secrets
+import concurrent.futures, datetime, http.cookiejar, json, os, pathlib, socket, socketserver, ssl, subprocess, threading, time, urllib.request, urllib.error, secrets
 
 BASE = os.environ.get('NEKOPASS_E2E_BASE', 'http://127.0.0.1:8080/api/v1/')
 CA = '/etc/nekopass/tls/server.crt'
@@ -53,34 +53,33 @@ def echo(port,n=65536):
             assert received==piece;sent+=len(piece)
         c.shutdown(socket.SHUT_WR)
         assert c.recv(1)==b''
-class PlanFixture:
+NODE_FIELDS=('name','enabled','public_address','notes','group_ids','listen_host','port_min','port_max','max_connections','dial_timeout_seconds','idle_timeout_seconds','allow_direct','tunnel_exit_enabled','tunnel_protocol','tunnel_listen_host','tunnel_listen_port','tunnel_public_host','allowed_ingress_ids')
+class UserFixture:
     def __init__(self,node,quota=1<<30,speed=100):
         self.node=node; suffix=secrets.token_hex(5)
         self.group=api('admin/node-groups',{'name':'fixture-'+suffix,'enabled':True,'description':'','sort_order':0,'node_ids':[node]},'POST')['id']
-        self.plan={'name':'fixture-'+suffix,'description':'','enabled':True,'speed_mbps':speed,'quota_bytes':quota,'max_rules':20,'max_connections':100,'ip_limit':0,'rule_speed_mbps':0,'rule_ip_limit':0,'rule_connection_limit':0,'duration_days':0,'node_group_ids':[self.group]}
-        self.plan_id=api('admin/plans',self.plan,'POST')['id']
-        self.user={'username':'fixture-'+suffix,'password':secrets.token_hex(12),'enabled':True,'plan_id':self.plan_id}
-        self.uid=api('users',self.user,'POST')['id']
+        self.user={'username':'fixture-'+suffix,'password':secrets.token_hex(12)}
+        self.resources={'speed_mbps':speed,'quota_bytes':quota,'max_rules':20,'max_connections':100,'ip_limit':0,'rule_speed_mbps':0,'rule_ip_limit':0,'rule_connection_limit':0,'node_group_ids':[self.group],'expires_at':''}
+        self.uid=api('users',{**self.user,'password':self.user['password'],'enabled':True,**self.resources},'POST')['id']
     def request(self,path,data=None,method=None):return api('admin/users/'+str(self.uid)+'/'+path,data,method)
-    def update_plan(self,**values):
-        revision=next(n for n in api('admin/nodes') if n['id']==self.node)['applied_revision']
-        self.plan.update(values);api('admin/plans/'+str(self.plan_id),self.plan,'PUT')
-        # Test fixtures explicitly update personal resources; plan edits only change defaults.
-        personal={key:self.plan[key] for key in ['speed_mbps','quota_bytes','max_rules','max_connections','ip_limit','rule_speed_mbps','rule_ip_limit','rule_connection_limit','node_group_ids']}
-        api('admin/users/'+str(self.uid),{**self.user,'password':'',**personal},'PUT')
-        wait(lambda:next(n for n in api('admin/nodes') if n['id']==self.node)['applied_revision']>revision)
+    def update_resources(self,**values):
+        days=values.pop('duration_days',None)
+        if days is not None:
+            values['expires_at']='' if not days else (datetime.datetime.now(datetime.timezone.utc)+datetime.timedelta(days=days)).strftime('%Y-%m-%dT%H:%M:%SZ')
+        self.resources.update(values)
+        api('admin/users/'+str(self.uid),{**self.user,'password':'','enabled':True,**self.resources},'PUT')
     def close(self):
         rows=self.request('rules')
         if rows:self.request('rules/batch',{'ids':[r['id'] for r in rows],'action':'delete'},'POST')
         for g in self.request('rule-groups'):self.request('rule-groups/'+str(g['id']),{},'DELETE')
-        api('users/'+str(self.uid),{**self.user,'enabled':False,'plan_id':0},'PUT')
-        api('admin/plans/'+str(self.plan_id),{},'DELETE');api('admin/node-groups/'+str(self.group),{},'DELETE')
+        api('users/'+str(self.uid),{**self.user,'password':'','enabled':False,**self.resources},'PUT')
+        api('admin/node-groups/'+str(self.group),{},'DELETE')
 
 def main():
     credentials=json.loads(pathlib.Path(os.environ.get('NEKOPASS_E2E_ADMIN_FILE','/root/nekopass-test-access.json')).read_text())
     wait(lambda:api('login',credentials,'POST'))
     node=next(n for n in api('admin/nodes') if n['online'])['id']
-    f=PlanFixture(node);q=PlanFixture(node,quota=1<<20,speed=1000);target=start_target(Echo);sink=start_target(Sink)
+    f=UserFixture(node);q=UserFixture(node,quota=1<<20,speed=1000);target=start_target(Echo);sink=start_target(Sink)
     def create(f,port):
         rid=f.request('rules',{'node_id':node,'targets':['127.0.0.1:'+str(port)],'enabled':True},'POST')['id']
         return wait(lambda:next((r for r in f.request('rules') if r['id']==rid and r['status']=='active'),None))['listen_port']

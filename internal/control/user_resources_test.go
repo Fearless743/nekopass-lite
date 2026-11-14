@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"sync"
 	"testing"
-	"time"
 
 	pb "github.com/nekopass/nekopass/internal/protocol"
 )
@@ -19,13 +18,11 @@ func TestPersonalResourcesAreScopedAndOldReportsCannotReplaceEditedUsage(t *test
 		t.Fatal(e)
 	}
 	group := testAuthorize(t, f.p, f.user, node)
+	testAuthorize(t, f.p, f.other, node)
 	t.Cleanup(func() {
 		f.p.Exec(ctx, "DELETE FROM grants WHERE node_id=$1", node)
 		f.p.Exec(ctx, "DELETE FROM nodes WHERE id=$1", node)
 	})
-	if _, e := f.p.Exec(ctx, "UPDATE users SET plan_id=$2 WHERE id=$1", f.other, f.plan); e != nil {
-		t.Fatal(e)
-	}
 	stream := &StreamServer{Server: f.s}
 	report := &pb.AgentMessage{ProtocolVersion: 10, InstanceId: Secret(), RequestUsers: []int64{f.user}}
 	out, e := stream.exchange(ctx, f.p, node, report)
@@ -39,7 +36,7 @@ func TestPersonalResourcesAreScopedAndOldReportsCannotReplaceEditedUsage(t *test
 		t.Fatal(e)
 	}
 	path := fmt.Sprintf("admin/users/%d", f.user)
-	change := map[string]any{"username": Secret(), "enabled": true, "plan_id": f.plan, "quota_bytes": 1000, "traffic_bytes": 200, "speed_mbps": 123, "max_connections": 5, "ip_limit": 2, "rule_speed_mbps": 8, "rule_ip_limit": 1, "rule_connection_limit": 4, "node_group_ids": []int64{group}, "expires_at": ""}
+	change := map[string]any{"username": Secret(), "enabled": true, "quota_bytes": 1000, "traffic_bytes": 200, "speed_mbps": 123, "max_connections": 5, "ip_limit": 2, "rule_speed_mbps": 8, "rule_ip_limit": 1, "rule_connection_limit": 4, "node_group_ids": []int64{group}, "expires_at": ""}
 	securityStatus(t, f.request(f.user, path, "PUT", change), 403)
 	securityStatus(t, f.request(f.user, "users/"+fmt.Sprint(f.user), "PUT", change), 403)
 	securityStatus(t, f.request(f.admin, path, "PUT", change), 200)
@@ -87,7 +84,7 @@ func TestPersonalResourcesAreScopedAndOldReportsCannotReplaceEditedUsage(t *test
 		t.Fatal("new usage did not accumulate from edited baseline")
 	}
 	// Neither metadata edits nor form retries may reset consumption.
-	base := map[string]any{"username": Secret(), "enabled": true, "plan_id": f.plan, "speed_mbps": 50, "expected_resources_revision": profile()["resources_revision"]}
+	base := map[string]any{"username": Secret(), "enabled": true, "speed_mbps": 50, "expected_resources_revision": profile()["resources_revision"]}
 	securityStatus(t, f.request(f.admin, path, "PUT", base), 200)
 	securityStatus(t, f.request(f.admin, path, "PUT", base), 409)
 	if profile()["traffic_bytes"].(float64) != 290 || profile()["quota_epoch"].(float64) != 1 {
@@ -156,7 +153,7 @@ func TestEditedUsageIsSubtractedFromConcurrentNodeAllocations(t *testing.T) {
 	if _, e := f.p.Exec(ctx, "INSERT INTO node_group_members(group_id,node_id) VALUES($1,$2)", group, nodes[1]); e != nil {
 		t.Fatal(e)
 	}
-	securityStatus(t, f.request(f.admin, fmt.Sprintf("admin/users/%d", f.user), "PUT", map[string]any{"username": Secret(), "enabled": true, "plan_id": f.plan, "quota_bytes": 1000, "traffic_bytes": 900}), 200)
+	securityStatus(t, f.request(f.admin, fmt.Sprintf("admin/users/%d", f.user), "PUT", map[string]any{"username": Secret(), "enabled": true, "quota_bytes": 1000, "traffic_bytes": 900}), 200)
 	stream := &StreamServer{Server: f.s}
 	var wg sync.WaitGroup
 	results := make(chan error, 2)
@@ -178,56 +175,5 @@ func TestEditedUsageIsSubtractedFromConcurrentNodeAllocations(t *testing.T) {
 	var issued int64
 	if e := f.p.QueryRow(ctx, "SELECT sum(issued-released)::bigint FROM current_grants WHERE user_id=$1", f.user).Scan(&issued); e != nil || issued != 100 {
 		t.Fatal("concurrent nodes exceeded the remaining personal quota", e, issued)
-	}
-}
-
-func TestPlanDefaultsAndSamePlanRenewalPreservePersonalSettings(t *testing.T) {
-	f := newSecurityFixture(t)
-	ctx := context.Background()
-	path := fmt.Sprintf("admin/users/%d", f.user)
-	securityStatus(t, f.request(f.admin, path, "PUT", map[string]any{"username": Secret(), "enabled": true, "plan_id": f.plan, "speed_mbps": 12, "quota_bytes": 777, "traffic_bytes": 222, "max_rules": 30, "ip_limit": 3}), 200)
-	defaults := PlanInput{Name: Secret(), Enabled: true, SpeedMbps: 99, QuotaBytes: 1024, MaxRules: 1, MaxConnections: 2, DurationDays: 5, Prices: map[string]*string{}}
-	price := "1.00"
-	defaults.Prices["annual"] = &price
-	securityStatus(t, f.request(f.admin, fmt.Sprintf("admin/plans/%d", f.plan), "PUT", defaults), 200)
-	var quota, speed int64
-	var ip, limit int
-	if e := f.p.QueryRow(ctx, "SELECT quota_bytes,speed_bps,ip_limit,max_rules FROM user_entitlements WHERE id=$1", f.user).Scan(&quota, &speed, &ip, &limit); e != nil || quota != 777 || speed != 12*125000 || ip != 3 || limit != 30 {
-		t.Fatal("plan defaults overwritten personal resources", e)
-	}
-	// New assignments get current defaults, existing assignments are immutable.
-	if _, e := f.p.Exec(ctx, "UPDATE users SET plan_id=$2 WHERE id=$1", f.other, f.plan); e != nil {
-		t.Fatal(e)
-	}
-	if e := f.p.QueryRow(ctx, "SELECT quota_bytes,speed_bps FROM users WHERE id=$1", f.other).Scan(&quota, &speed); e != nil || quota != 1024 || speed != 99*125000 {
-		t.Fatal("new assignment missed defaults", e)
-	}
-	securityStatus(t, f.request(f.admin, path+"/recharge", "POST", map[string]any{"amount": "10.00", "request_key": Secret(), "note": "fixture-credit"}), 200)
-	quote := f.request(f.user, "shop/quote", "POST", map[string]any{"plan_id": f.plan, "cycle": "annual"})
-	securityStatus(t, quote, 200)
-	var q struct {
-		Epoch int64 `json:"epoch"`
-		Price int64 `json:"amount_cents"`
-	}
-	json.Unmarshal(quote.Body.Bytes(), &q)
-	purchase := map[string]any{"plan_id": f.plan, "cycle": "annual", "request_key": Secret(), "expected_price_cents": q.Price, "expected_epoch": q.Epoch}
-	securityStatus(t, f.request(f.user, "shop/purchase", "POST", purchase), 200)
-	securityStatus(t, f.request(f.user, "shop/purchase", "POST", purchase), 200)
-	var baseline, balance int64
-	if e := f.p.QueryRow(ctx, "SELECT quota_bytes,speed_bps,ip_limit,max_rules,traffic_base_bytes,(SELECT balance_cents FROM wallet_accounts WHERE user_id=$1) FROM users WHERE id=$1", f.user).Scan(&quota, &speed, &ip, &limit, &baseline, &balance); e != nil || quota != 777 || speed != 12*125000 || ip != 3 || limit != 30 || baseline != 0 || balance != 900 {
-		t.Fatal("renewal changed personal limits, replayed debit or failed traffic reset", e)
-	}
-	// A monthly reset (including an admin-made permanent subscription) only clears usage.
-	now := time.Now()
-	anchor := now.AddDate(0, -2, 0)
-	next := now.Add(-time.Minute)
-	if _, e := f.p.Exec(ctx, "UPDATE users SET traffic_base_bytes=100,subscription_expires_at=NULL,reset_anchor_at=$2,next_reset_at=$3,reset_index=1 WHERE id=$1", f.user, anchor, next); e != nil {
-		t.Fatal(e)
-	}
-	if e := f.s.resetDueSubscriptions(ctx, now); e != nil {
-		t.Fatal(e)
-	}
-	if e := f.p.QueryRow(ctx, "SELECT quota_bytes,traffic_base_bytes FROM users WHERE id=$1", f.user).Scan(&quota, &baseline); e != nil || quota != 777 || baseline != 0 {
-		t.Fatal("monthly reset restored plan defaults or kept adjusted usage", e)
 	}
 }

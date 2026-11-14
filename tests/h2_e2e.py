@@ -10,9 +10,8 @@ def main():
  exitnode=node('h2-exit',tunnel_protocol='tls_h2',tls=tls,tunnel_exit_enabled=True,tunnel_listen_port=31199,tunnel_public_host='127.0.0.1',allowed_ingress_ids=[entryid['id']])
  exitid=api('admin/nodes',exitnode,'POST');exitnode['token']=exitid['token']
  group=api('admin/node-groups',{'name':'h2-group','enabled':True,'node_ids':[entryid['id'],exitid['id']]},'POST')['id']
- plan=api('admin/plans',{'name':'h2-plan','enabled':True,'speed_mbps':0,'quota_bytes':4<<20,'max_rules':10,'max_connections':100,'duration_days':30,'node_group_ids':[group]},'POST')['id']
  user={'username':'h2-user','password':secrets.token_hex(20)}
- uid=api('admin/users',{**user,'enabled':True,'plan_id':plan},'POST')['id'];uc=client();api('login',user,'POST',uc)
+ uid=api('admin/users',{**user,'enabled':True,'speed_mbps':0,'quota_bytes':4<<20,'max_rules':10,'max_connections':100,'node_group_ids':[group]},'POST')['id'];uc=client();api('login',user,'POST',uc)
  own=lambda path,data=None,method=None:api(path,data,method,uc)
  start_agent('ingress',entryid['token']);start_agent('exit',exitid['token'])
  n=lambda id:next(n for n in api('admin/nodes') if n['id']==id)

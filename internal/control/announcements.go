@@ -2,10 +2,24 @@ package control
 
 import (
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/jackc/pgx/v5"
 )
+
+func listPage(w http.ResponseWriter, r *http.Request) (int, bool) {
+	page := 1
+	if raw := r.URL.Query().Get("page"); raw != "" {
+		v, err := strconv.Atoi(raw)
+		if err != nil || v < 1 || v > 1000000 {
+			fail(w, 400, "页码无效")
+			return 0, false
+		}
+		page = v
+	}
+	return page, true
+}
 
 func (s *Server) announcements(w http.ResponseWriter, r *http.Request) {
 	staff := strings.HasPrefix(r.URL.Path, "/api/v1/admin/")

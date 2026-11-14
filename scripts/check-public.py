@@ -15,11 +15,14 @@ import sys
 import tempfile
 import zipfile
 
-ROOT_FILES = {'.gitignore', '.gitattributes', 'README.md', 'CHANGELOG.md', 'SECURITY.md', 'LICENSE',
+ROOT_FILES = {'.gitignore', '.gitattributes', '.dockerignore', 'Dockerfile',
+              'README.md', 'CHANGELOG.md', 'SECURITY.md', 'LICENSE',
               'go.mod', 'go.sum', 'sqlc.yaml', '开发指南.md'}
+# Extensionless build/config files are source, not runtime state.
+SOURCE_NAMES = {'Dockerfile', 'Containerfile', 'Caddyfile'}
 SOURCE_DIRS = {'.github', '.githooks', 'api', 'cmd', 'deploy', 'docs', 'internal',
                'scripts', 'tests', 'web', 'third_party'}
-PRIVATE_DIRS = {'.git', '.local', '.tools', 'node_modules', 'dist', '__pycache__',
+PRIVATE_DIRS = {'.git', '.local', '.tools', 'node_modules', 'dist', '__pycache__', '.ruff_cache',
                 '.ssh', '.aws', '.codex', '.agents', '.vscode', '.idea', 'coverage', 'cache', 'temp', '.temp'}
 EXTENSIONS = {'.go', '.mod', '.sum', '.sql', '.proto', '.yaml', '.yml', '.md', '.txt',
               '.sh', '.ps1', '.py', '.ts', '.mts', '.js', '.cjs', '.mjs', '.json', '.vue',
@@ -59,6 +62,8 @@ def path_problem(name):
     if name == 'third_party/quic-go/LICENSE':
         return None
     if path.parts[0] == '.githooks' and path.name in {'pre-commit', 'pre-push'}:
+        return None
+    if path.name in SOURCE_NAMES:
         return None
     return None if path.suffix.lower() in EXTENSIONS else 'unreviewed-file-type'
 

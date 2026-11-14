@@ -1,19 +1,18 @@
 """Unlimited modes and transitions on the dedicated systemd test host."""
 import json,pathlib,socket,subprocess,time
-from e2e import api,wait,echo,service,PlanFixture,start_target,Echo,Sink
-from plans_e2e import NODE_FIELDS
+from e2e import api,wait,echo,service,UserFixture,start_target,Echo,Sink,NODE_FIELDS
 
 def main():
  api('login',json.loads(pathlib.Path('/root/nekopass-test-access.json').read_text()),'POST')
  node=next(n for n in api('admin/nodes') if n['online']);nid=node['id'];original={k:node[k] for k in NODE_FIELDS}
- f=PlanFixture(nid,quota=-1,speed=0);target=start_target(Echo);sink=start_target(Sink);connections=[]
+ f=UserFixture(nid,quota=-1,speed=0);target=start_target(Echo);sink=start_target(Sink);connections=[]
  def usage():return next(u for u in api('users') if u['id']==f.uid)
  def row(rid):return next(r for r in f.request('rules') if r['id']==rid)
  def create(port):
   rid=f.request('rules',{'node_id':nid,'targets':['127.0.0.1:'+str(port)],'enabled':True},'POST')['id']
   r=wait(lambda:row(rid) if row(rid)['status']=='active' else None);return rid,r['listen_port']
  try:
-  f.update_plan(max_rules=0,max_connections=0,duration_days=0)
+  f.update_resources(max_rules=0,max_connections=0,duration_days=0)
   changed={**original,'group_ids':list(set(original['group_ids']+[f.group])),'max_connections':0}
   before=node['applied_revision'];api('admin/nodes/'+str(nid),changed,'PUT');wait(lambda:next(n for n in api('admin/nodes') if n['id']==nid)['applied_revision']>before)
   _,port=create(target.server_address[1]);_,port2=create(target.server_address[1]);_,sink_port=create(sink.server_address[1])
@@ -36,7 +35,7 @@ def main():
   service('restart','nekopass-agent');time.sleep(3);echo(port,65536);wait(lambda:usage()['traffic_bytes']==stable+131072)
   print('PASS unlimited mode survives Agent restart without resetting consumption',flush=True)
   old=usage()['traffic_bytes'];finite_quota=usage()['allocated_bytes']+(1<<20)
-  f.update_plan(quota_bytes=finite_quota,speed_mbps=40,max_rules=3,max_connections=2,duration_days=1)
+  f.update_resources(quota_bytes=finite_quota,speed_mbps=40,max_rules=3,max_connections=2,duration_days=1)
   assert usage()['traffic_bytes']==old
   before_sink=Sink.total
   with socket.create_connection(('127.0.0.1',sink_port),timeout=15) as c:
@@ -44,14 +43,14 @@ def main():
    except OSError:pass
   wait(lambda:Sink.total==before_sink+(1<<20));wait(lambda:usage()['traffic_bytes']==old+(1<<20))
   print('PASS switching to finite restores exact remaining quota; historical unlimited usage retained',flush=True)
-  f.update_plan(quota_bytes=-1,speed_mbps=0,max_rules=0,max_connections=0,duration_days=0)
+  f.update_resources(quota_bytes=-1,speed_mbps=0,max_rules=0,max_connections=0,duration_days=0)
   echo(port2,1024)
   subprocess.run(['runuser','-u','postgres','--','psql','-d','nekopass','-c',f"UPDATE users SET plan_started_at=now()-interval '5 years' WHERE id={int(f.uid)}"],check=True,stdout=subprocess.DEVNULL)
-  f.update_plan(duration_days=1)
+  f.update_resources(duration_days=1)
   assert usage()['expires_at'] is not None
   try:echo(port,1);raise AssertionError('expired user forwarded')
   except (OSError,ConnectionError):pass
-  f.update_plan(duration_days=0);assert usage()['expires_at'] is None;echo(port,1024)
+  f.update_resources(expires_at='');assert usage()['expires_at'] is None;echo(port,1024)
   print('PASS finite expiry blocks forwarding, forever expiry re-enables it',flush=True)
   print('ALL UNLIMITED E2E TESTS PASSED',flush=True)
  finally:

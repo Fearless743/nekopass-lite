@@ -39,7 +39,7 @@ func TestTLSNodeConfigurationScopeAndProtocolGate(t *testing.T) {
 		return w
 	}
 	node := func(protocol string) NodeInput {
-		return NodeInput{Name: Secret(), Enabled: true, IngressEnabled: true, AllowDirect: true, ListenHost: "127.0.0.1", PortMin: 1024, PortMax: 65535, MaxConnections: 1000, DialTimeoutSeconds: 8, IdleTimeoutSeconds: 300, ProbeIntervalSeconds: 5, DiskPath: "/", TunnelListenHost: "127.0.0.1", TunnelProtocol: protocol}
+		return NodeInput{Name: Secret(), Enabled: true, IngressEnabled: true, AllowDirect: true, ListenHost: "127.0.0.1", PortMin: 1024, PortMax: 65535, MaxConnections: 1000, DialTimeoutSeconds: 8, IdleTimeoutSeconds: 300, TunnelListenHost: "127.0.0.1", TunnelProtocol: protocol}
 	}
 	create := func(input NodeInput) int64 {
 		t.Helper()

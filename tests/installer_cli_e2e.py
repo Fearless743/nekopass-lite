@@ -66,8 +66,6 @@ def main():
             assert 'NEKOPASS_PANEL_URL=' not in (CONFIG_DIR/'agent.env').read_text()
             assert subprocess.check_output(['systemctl', 'is-enabled', SERVICE], text=True).strip() == 'enabled'
             assert subprocess.check_output(['systemctl', 'is-active', SERVICE], text=True).strip() == 'active'
-            assert subprocess.check_output(['systemctl', 'is-active', SERVICE+'-update.path'], text=True).strip() == 'active'
-            assert (BIN_DIR/'bin/nekopass-update').is_file()
             assert subprocess.check_output(['systemctl', 'show', 'nekopass.service', '-p', 'MainPID', '--value']) == before
             assert not list(STATE_DIR.glob('state.db.before-reconfigure-*'))
             subprocess.run(['systemctl', 'stop', SERVICE], check=True)
@@ -90,10 +88,6 @@ def main():
             server.shutdown()
             server.server_close()
             subprocess.run(['systemctl', 'disable', '--now', SERVICE], capture_output=True)
-            subprocess.run(['systemctl', 'disable', '--now', SERVICE+'-update.path'], capture_output=True)
-            subprocess.run(['systemctl', 'stop', SERVICE+'-update.service'], capture_output=True)
-            for suffix in ['-update.path','-update.service']:
-                pathlib.Path('/etc/systemd/system',SERVICE+suffix).unlink(missing_ok=True)
             UNIT.unlink(missing_ok=True)
             for path in [CONFIG_DIR, STATE_DIR, BIN_DIR]:
                 assert path.name == SERVICE

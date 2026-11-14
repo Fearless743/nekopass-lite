@@ -24,7 +24,6 @@ func TestInvalidResourcePathsDoNotCreateDatabaseRows(t *testing.T) {
 		payload     any
 	}{
 		{"admin/users/bad", "users", f.admin, UserInput{Username: Secret(), Password: password, Enabled: true}},
-		{"admin/plans/bad", "plans", f.admin, PlanInput{Name: Secret(), Enabled: true}},
 		{"admin/nodes/bad", "nodes", f.admin, map[string]any{"name": Secret()}},
 		{"admin/node-groups/bad", "node_groups", f.admin, map[string]any{"name": Secret()}},
 		{"rule-groups/bad", "rule_groups", f.user, map[string]any{"name": "fixture-group"}},

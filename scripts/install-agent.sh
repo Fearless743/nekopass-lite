@@ -6,8 +6,6 @@ umask 077
 # Release packaging embeds the manager here; repository runs use the sibling file.
 write_manager_payload() { return 1; }
 # PACKAGED_MANAGER
-write_updater_payload() { return 1; }
-# PACKAGED_UPDATER
 
 SERVER=''; TOKEN=''; TOKEN_FILE=''; PANEL_URL=''; INSTALL_TOKEN=''
 DOWNLOAD_BASE='https://github.com/hajidishu/nekopass/releases/download'
@@ -101,11 +99,6 @@ for target in "$BIN" "$ENV_FILE" "$UNIT"; do [[ ! -L "$target" ]] || die "Refusi
 WORK=$(mktemp -d /tmp/nekopass-install.XXXXXXXX)
 [[ "$WORK" == /tmp/nekopass-install.* ]] || die 'Invalid temporary directory'
 MANAGER_SOURCE="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/nekopassctl.sh"
-UPDATER_SOURCE="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/nekopass-update.py"
-if ! write_updater_payload > "$WORK/nekopass-update"; then
- [[ -f "$UPDATER_SOURCE" ]] || die 'Use the GitHub release installer (updater payload missing)'
- cp "$UPDATER_SOURCE" "$WORK/nekopass-update"
-fi
 if ! write_manager_payload > "$WORK/nekopassctl"; then
  if [[ -f "$MANAGER_SOURCE" ]]; then
   tr -d '\r' < "$MANAGER_SOURCE" > "$WORK/nekopassctl"
@@ -297,34 +290,7 @@ LimitNOFILE=65536
 WantedBy=multi-user.target
 UNIT
 install -m 644 "$WORK/agent.service" "$UNIT"
-install -m 755 "$WORK/nekopass-update" "$(dirname "$BIN")/nekopass-update"
-cat > "$WORK/update.service" <<UNIT
-[Unit]
-Description=Nekopass Agent release updater
-[Service]
-Type=oneshot
-ExecStart=$(dirname "$BIN")/nekopass-update --service $SERVICE --request
-TimeoutStartSec=600
-UMask=0077
-NoNewPrivileges=true
-PrivateTmp=true
-ProtectHome=true
-ProtectSystem=strict
-ReadWritePaths=$(dirname "$(dirname "$BIN")") $STATE_DIR /run/lock
-UNIT
-cat > "$WORK/update.path" <<UNIT
-[Unit]
-Description=Watch Nekopass Agent update requests
-[Path]
-PathExists=$STATE_DIR/update-request.json
-Unit=$SERVICE-update.service
-[Install]
-WantedBy=multi-user.target
-UNIT
-install -m 644 "$WORK/update.service" "/etc/systemd/system/$SERVICE-update.service"
-install -m 644 "$WORK/update.path" "/etc/systemd/system/$SERVICE-update.path"
 systemctl daemon-reload
-systemctl enable --now "$SERVICE-update.path" >/dev/null
 if ((!NO_START)); then
  systemctl enable "$SERVICE" >/dev/null
  systemctl restart "$SERVICE"

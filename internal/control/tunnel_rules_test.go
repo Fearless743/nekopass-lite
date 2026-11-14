@@ -40,7 +40,7 @@ func TestTunnelRuleScopeAndDirectPermission(t *testing.T) {
 		}
 	}
 	node := func(name string) NodeInput {
-		return NodeInput{Name: name, Enabled: true, IngressEnabled: true, AllowDirect: true, TunnelProtocol: "plain_tcp", TunnelListenHost: "0.0.0.0", ListenHost: "0.0.0.0", PortMin: 1024, PortMax: 65535, MaxConnections: 1000, DialTimeoutSeconds: 8, IdleTimeoutSeconds: 300, ProbeIntervalSeconds: 5, DiskPath: "/"}
+		return NodeInput{Name: name, Enabled: true, IngressEnabled: true, AllowDirect: true, TunnelProtocol: "plain_tcp", TunnelListenHost: "0.0.0.0", ListenHost: "0.0.0.0", PortMin: 1024, PortMax: 65535, MaxConnections: 1000, DialTimeoutSeconds: 8, IdleTimeoutSeconds: 300}
 	}
 	created := func(v NodeInput) int64 {
 		w := request(adminID, "admin/nodes", "POST", v)

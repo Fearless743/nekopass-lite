@@ -12,12 +12,9 @@ $installerPath = Join-Path $assetRoot 'install-agent.sh'
 $installerText = [IO.File]::ReadAllText((Join-Path $repoRoot 'scripts/install-agent.sh')).Replace("`r`n", "`n")
 $managerText = [IO.File]::ReadAllText((Join-Path $repoRoot 'scripts/nekopassctl.sh')).Replace("`r`n", "`n")
 $managerPayload = "write_manager_payload() {`ncat <<'NEKOPASS_MANAGER_PAYLOAD'`n" + $managerText.TrimEnd() + "`nNEKOPASS_MANAGER_PAYLOAD`n}`n"
-$updaterText = [IO.File]::ReadAllText((Join-Path $repoRoot 'scripts/nekopass-update.py')).Replace("`r`n", "`n")
-$updaterPayload = "write_updater_payload() {`ncat <<'NEKOPASS_UPDATER_PAYLOAD'`n" + $updaterText.TrimEnd() + "`nNEKOPASS_UPDATER_PAYLOAD`n}`n"
-$installerText = $installerText.Replace('# PACKAGED_MANAGER', $managerPayload).Replace('# PACKAGED_UPDATER', $updaterPayload).Replace('v0.19.4', $Version)
+$installerText = $installerText.Replace('# PACKAGED_MANAGER', $managerPayload).Replace('# PACKAGED_UPDATER', '').Replace('v0.19.4', $Version)
 [IO.File]::WriteAllText($installerPath, $installerText, $utf8)
 [IO.File]::WriteAllText((Join-Path $assetRoot 'nekopassctl.sh'), $managerText, $utf8)
-[IO.File]::WriteAllText((Join-Path $assetRoot 'nekopass-update.py'), $updaterText, $utf8)
 $previousOS = $env:GOOS
 $previousArch = $env:GOARCH
 $previousCGO = $env:CGO_ENABLED
