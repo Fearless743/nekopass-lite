@@ -1,4 +1,4 @@
-param([string]$Version = 'v0.19.4', [string]$DownloadBase = 'https://github.com/hajidishu/nekopass/releases/download')
+param([string]$Version = 'v0.19.4', [string]$DownloadBase = 'https://github.com/fearless743/nekopass-lite/releases/download')
 $ErrorActionPreference = 'Stop'
 if ($Version -notmatch '^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$' -or $Version.Contains('..')) { throw 'Invalid version' }
 if ($DownloadBase) {
@@ -30,7 +30,7 @@ try {
     $manager = [IO.File]::ReadAllText((Join-Path $repoRoot 'scripts/nekopassctl.sh')).Replace("`r`n", "`n")
     $installer = [IO.File]::ReadAllText((Join-Path $repoRoot 'scripts/install-panel.sh')).Replace("`r`n", "`n")
     $payload = "write_manager_payload() {`ncat <<'NEKOPASS_MANAGER_PAYLOAD'`n" + $manager.TrimEnd() + "`nNEKOPASS_MANAGER_PAYLOAD`n}`n"
-    $installer = $installer.Replace('# PACKAGED_MANAGER', $payload).Replace('# PACKAGED_UPDATER', '').Replace("DEFAULT_DOWNLOAD_BASE='https://github.com/hajidishu/nekopass/releases/download'", "DEFAULT_DOWNLOAD_BASE='$($DownloadBase.TrimEnd('/'))'")
+    $installer = $installer.Replace('# PACKAGED_MANAGER', $payload).Replace('# PACKAGED_UPDATER', '').Replace("DEFAULT_DOWNLOAD_BASE='https://github.com/fearless743/nekopass-lite/releases/download'", "DEFAULT_DOWNLOAD_BASE='$($DownloadBase.TrimEnd('/'))'")
     $installer = $installer.Replace('v0.19.4', $Version)
     [IO.File]::WriteAllText((Join-Path $assets 'install-panel.sh'), $installer, $utf8)
     $env:GOOS = 'linux'; $env:CGO_ENABLED = '0'
