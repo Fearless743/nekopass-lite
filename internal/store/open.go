@@ -56,6 +56,11 @@ func Migrate(ctx context.Context, p *pgxpool.Pool) error {
 		if version != CurrentSchemaVersion {
 			return errors.New("unsupported database schema; recreate the database with this release")
 		}
+		// Apply idempotent incremental migrations for databases created by
+		// earlier builds of the same schema version.
+		if _, err = tx.Exec(ctx, "ALTER TABLE nodes ADD COLUMN IF NOT EXISTS tunnel_exit_allow_all_ingress boolean NOT NULL DEFAULT false"); err != nil {
+			return err
+		}
 		return tx.Commit(ctx)
 	}
 	if _, err = tx.Exec(ctx, schema); err != nil {
