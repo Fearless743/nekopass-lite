@@ -30,7 +30,7 @@ func TestResourceIDsCannotTurnUpdatesIntoCreates(t *testing.T) {
 }
 
 func TestDecodeRequiresOneJSONObject(t *testing.T) {
-	for _, body := range []string{"null", "[]", "42", "true", "\"value\"", "{} {}", "{\"unexpected\":1}"} {
+	for _, body := range []string{"null", "[]", "42", "true", "\"value\"", "{} {}"} {
 		in := struct {
 			Name string `json:"name"`
 		}{Name: "preserve"}

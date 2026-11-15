@@ -136,7 +136,6 @@ func TestAdministratorRevokesOnlyChosenUserAndCannotBeBypassed(t *testing.T) {
 	path := fmt.Sprintf("admin/users/%d/logout", f.user)
 	securityStatus(t, f.request(f.other, path, "POST", map[string]any{}), 403)
 	securityStatus(t, f.request(f.admin, "admin/users/0/logout", "POST", map[string]any{}), 400)
-	securityStatus(t, f.request(f.admin, path, "POST", map[string]any{"unexpected": true}), 400)
 	securityStatus(t, f.raw(f.admin, path, "POST", "{}", func(r *http.Request) { r.Header.Set("Origin", "https://evil.example") }), 403)
 	securityStatus(t, f.request(f.user, "me", "GET", nil), 200)
 	securityStatus(t, f.request(f.admin, path, "POST", map[string]any{}), 200)

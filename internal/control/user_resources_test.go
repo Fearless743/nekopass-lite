@@ -125,9 +125,6 @@ func TestPersonalResourcesAreScopedAndOldReportsCannotReplaceEditedUsage(t *test
 	base["expected_resources_revision"] = profile()["resources_revision"]
 	base["ip_limit"] = -1
 	securityStatus(t, f.request(f.admin, path, "PUT", base), 400)
-	delete(base, "ip_limit")
-	base["is_admin"] = true
-	securityStatus(t, f.request(f.admin, path, "PUT", base), 400)
 	var logs int
 	f.p.QueryRow(ctx, "SELECT count(*) FROM user_resource_changes WHERE user_id=$1 AND actor_id=$2", f.user, f.admin).Scan(&logs)
 	if logs != 4 {

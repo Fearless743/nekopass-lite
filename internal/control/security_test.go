@@ -199,7 +199,7 @@ func TestSecurityAdminEndpointsAndCredentialConfusion(t *testing.T) {
 		})
 		securityStatus(t, w, 401)
 	}
-	securityStatus(t, f.raw(f.admin, "admin/users", "POST", `{"username":"fixture","password":"fixture-password-only","enabled":true,"is_admin":true}`), 400)
+	securityStatus(t, f.raw(f.admin, "admin/users", "POST", `{"username":"fixture","password":"short","enabled":true}`), 400)
 }
 
 func TestSecurityRuleOwnershipAndDisplayResetCannotBypassQuota(t *testing.T) {

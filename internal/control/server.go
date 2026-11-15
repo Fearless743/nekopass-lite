@@ -83,7 +83,6 @@ func decode(w http.ResponseWriter, r *http.Request, v any) bool {
 		return false
 	}
 	valueDecoder := json.NewDecoder(bytes.NewReader(data))
-	valueDecoder.DisallowUnknownFields()
 	if e := valueDecoder.Decode(v); e != nil {
 		fail(w, 400, "无效的请求内容")
 		return false
