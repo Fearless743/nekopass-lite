@@ -3,6 +3,11 @@
 	admin 127.0.0.1:2019
 	# SSL is terminated by the upstream reverse proxy; Caddy serves plain HTTP.
 	auto_https off
+	# Serve HTTP/2 (h2c) on the plain-HTTP listener so gRPC clients can reach
+	# the merged port without an HTTP/1.1 upgrade round-trip.
+	servers {
+		protocols h1 h2c
+	}
 }
 
 # One public HTTP port for both the panel (8080) and the agent control
