@@ -51,7 +51,7 @@ const importPreview = computed(() => {
 const importAuthorizedNodes = computed(() => props.nodes.filter(n => policy.value?.node_ids.includes(n.id)))
 const importIngressNodes = computed(() => importAuthorizedNodes.value.filter(n => n.ingress_enabled))
 const importIngress = computed(() => importIngressNodes.value.find(n => n.id === importNodeID.value))
-const importExitNodes = computed(() => importAuthorizedNodes.value.filter(n => n.id !== importNodeID.value && n.tunnel_exit_enabled && n.allowed_ingress_ids.includes(importNodeID.value)))
+const importExitNodes = computed(() => importAuthorizedNodes.value.filter(n => n.id !== importNodeID.value && n.tunnel_exit_enabled && (n.allowed_ingress_ids.length===0 || n.allowed_ingress_ids.includes(importNodeID.value))))
 const importEgress=computed({get:()=>egressValue(importEgressID.value,importEgressGroupID.value),set:(v:string)=>{const x=splitEgress(v);importEgressID.value=x.egress_node_id;importEgressGroupID.value=x.egress_group_id}})
 function selectImportIngress(id: number) { importNodeID.value = id; importEgress.value=importExitChoices.value[0]?.value||'node:0' }
 function showImport() {
@@ -74,7 +74,7 @@ const proxySendEnabled = proxyToggle('proxy_send')
 const groupForm = reactive({ name: '', user_id: owner.value || props.me.id })
 const authorizedNodes = computed(() => props.nodes.filter(n => props.users.find(u => u.id === form.user_id)?.node_ids.includes(n.id)))
 const eligibleNodes = computed(() => authorizedNodes.value.filter(n => n.ingress_enabled))
-const egressOptions = computed(() => authorizedNodes.value.filter(n => n.id !== form.node_id && n.tunnel_exit_enabled && n.allowed_ingress_ids.includes(form.node_id)&&(!n.tunnel_protocol?.endsWith('_udp')||form.protocol==='udp')))
+const egressOptions = computed(() => authorizedNodes.value.filter(n => n.id !== form.node_id && n.tunnel_exit_enabled && (n.allowed_ingress_ids.length===0 || n.allowed_ingress_ids.includes(form.node_id))&&(!n.tunnel_protocol?.endsWith('_udp')||form.protocol==='udp')))
 const selectedIngress = computed(() => eligibleNodes.value.find(n => n.id === form.node_id))
 function udpIngressAllowed(nodeID:number){const node=eligibleNodes.value.find(n=>n.id===nodeID);const original=props.rules.find(r=>r.id===editID.value);return !node?.deny_udp_ingress_creation||!!original&&original.node_id===nodeID&&original.protocol==='udp'}
 function rowsUdpAllowed(){const original=props.rules.find(r=>r.id===editID.value);const oldEntries=new Set((original?.entries?.length?original.entries:[original].filter(Boolean).map((r:any)=>({node_id:r?.node_id}))).map((e:any)=>e.node_id));return entryRows.value.every(row=>{const node=eligibleNodes.value.find(n=>n.id===row.node_id);if(!node?.deny_udp_ingress_creation)return true;return !!original&&original.protocol==='udp'&&oldEntries.has(row.node_id)})}

@@ -55,7 +55,7 @@ func (s *Server) nodes(w http.ResponseWriter, r *http.Request) {
 	if !admin(w, r) {
 		return
 	}
-	rows, e := s.Pool.Query(r.Context(), `SELECT to_char(n.ingress_rate::numeric/10000,'FM9990.0000') AS ingress_multiplier,to_char(n.egress_rate::numeric/10000,'FM9990.0000') AS egress_multiplier,n.bandwidth_up_mbps,n.bandwidth_down_mbps,n.brutal_enabled,n.client_tcp_brutal_enabled,n.id,n.name,n.token,(n.instance_id<>'') AS bound,n.public_address,n.notes,n.enabled,n.listen_host,n.port_min,n.port_max,n.max_connections,n.dial_timeout_seconds,n.idle_timeout_seconds,n.udp_idle_timeout_seconds,n.ingress_enabled,n.deny_udp_ingress_creation,n.allow_direct,n.tunnel_exit_enabled,n.tunnel_protocol,CASE WHEN n.tunnel_protocol IN ('plain_h2','tls_h2','random_h2') THEN 'h2' WHEN n.tunnel_protocol='tls_h3' THEN 'h3' WHEN n.tunnel_protocol IN ('plain_udp','dtls_udp','random_udp') THEN 'raw_udp' ELSE 'raw_tcp' END AS tunnel_transport,CASE WHEN n.tunnel_protocol IN ('tls_tcp','tls_h2','dtls_udp','tls_h3') THEN 'tls' WHEN n.tunnel_protocol IN ('random_tcp','random_h2','random_udp') THEN 'random' ELSE 'none' END AS tunnel_security,n.mux_config AS mux,n.random_config AS random,n.tls_config AS tls,n.tls_status,n.tls_error,n.tls_not_after,n.protocol_version,n.tunnel_listen_host,n.tunnel_listen_port,n.tunnel_public_host,n.last_seen,n.applied_revision,n.config_revision,n.sync_error,n.active_connections,COALESCE(n.last_seen>now()-interval '12 seconds',false) AS online,COALESCE((SELECT array_agg(group_id ORDER BY group_id) FROM node_group_members WHERE node_id=n.id),'{}') AS group_ids,COALESCE((SELECT array_agg(ingress_node_id ORDER BY ingress_node_id) FROM node_tunnel_links WHERE egress_node_id=n.id),'{}') AS allowed_ingress_ids,(SELECT count(*) FROM rule_entries WHERE node_id=n.id) AS rule_count FROM nodes n ORDER BY n.id`)
+	rows, e := s.Pool.Query(r.Context(), `SELECT to_char(n.ingress_rate::numeric/10000,'FM9990.0000') AS ingress_multiplier,to_char(n.egress_rate::numeric/10000,'FM9990.0000') AS egress_multiplier,n.bandwidth_up_mbps,n.bandwidth_down_mbps,n.brutal_enabled,n.client_tcp_brutal_enabled,n.id,n.name,n.token,(n.instance_id<>'') AS bound,n.public_address,n.notes,n.enabled,n.listen_host,n.port_min,n.port_max,n.max_connections,n.dial_timeout_seconds,n.idle_timeout_seconds,n.udp_idle_timeout_seconds,n.ingress_enabled,n.deny_udp_ingress_creation,n.allow_direct,n.tunnel_exit_enabled,n.tunnel_protocol,CASE WHEN n.tunnel_protocol IN ('plain_h2','tls_h2','random_h2') THEN 'h2' WHEN n.tunnel_protocol='tls_h3' THEN 'h3' WHEN n.tunnel_protocol IN ('plain_udp','dtls_udp','random_udp') THEN 'raw_udp' ELSE 'raw_tcp' END AS tunnel_transport,CASE WHEN n.tunnel_protocol IN ('tls_tcp','tls_h2','dtls_udp','tls_h3') THEN 'tls' WHEN n.tunnel_protocol IN ('random_tcp','random_h2','random_udp') THEN 'random' ELSE 'none' END AS tunnel_security,n.mux_config AS mux,n.random_config AS random,n.tls_config AS tls,n.tls_status,n.tls_error,n.tls_not_after,n.protocol_version,n.tunnel_listen_host,n.tunnel_listen_port,n.tunnel_public_host,n.last_seen,n.applied_revision,n.config_revision,n.sync_error,n.active_connections,COALESCE(n.last_seen>now()-interval '12 seconds',false) AS online,COALESCE((SELECT array_agg(group_id ORDER BY group_id) FROM node_group_members WHERE node_id=n.id),'{}') AS group_ids,CASE WHEN n.tunnel_exit_allow_all_ingress THEN '{}'::bigint[] ELSE COALESCE((SELECT array_agg(ingress_node_id ORDER BY ingress_node_id) FROM node_tunnel_links WHERE egress_node_id=n.id),'{}') END AS allowed_ingress_ids,(SELECT count(*) FROM rule_entries WHERE node_id=n.id) AS rule_count FROM nodes n ORDER BY n.id`)
 	s.sendRows(w, rows, e)
 }
 func (s *Server) saveNode(w http.ResponseWriter, r *http.Request) { s.saveNodePart(w, r, "full") }
@@ -286,7 +286,8 @@ func (s *Server) saveNodePart(w http.ResponseWriter, r *http.Request, part strin
 		s.dbError(w, e)
 		return
 	}
-	tag, e := tx.Exec(ctx, `UPDATE nodes SET name=$2,public_address=$3,notes=$4,enabled=$5,listen_host=$6,port_min=$7,port_max=$8,max_connections=$9,dial_timeout_seconds=$10,idle_timeout_seconds=$11,allow_direct=$12,tunnel_exit_enabled=$13,tunnel_protocol=$14,tunnel_listen_host=$15,tunnel_listen_port=$16,tunnel_public_host=$17,token=$18,token_hash=$19,ingress_enabled=$20,config_revision=(SELECT value+1 FROM revision WHERE id=1) WHERE id=$1`, id, v.Name, v.PublicAddress, v.Notes, v.Enabled, v.ListenHost, v.PortMin, v.PortMax, v.MaxConnections, v.DialTimeoutSeconds, v.IdleTimeoutSeconds, v.AllowDirect, v.TunnelExitEnabled, v.TunnelProtocol, v.TunnelListenHost, v.TunnelListenPort, v.TunnelPublicHost, token, tokenHash, v.IngressEnabled)
+	allowAll := v.TunnelExitEnabled && len(v.AllowedIngressIDs) == 0
+	tag, e := tx.Exec(ctx, `UPDATE nodes SET name=$2,public_address=$3,notes=$4,enabled=$5,listen_host=$6,port_min=$7,port_max=$8,max_connections=$9,dial_timeout_seconds=$10,idle_timeout_seconds=$11,allow_direct=$12,tunnel_exit_enabled=$13,tunnel_protocol=$14,tunnel_listen_host=$15,tunnel_listen_port=$16,tunnel_public_host=$17,token=$18,token_hash=$19,ingress_enabled=$20,tunnel_exit_allow_all_ingress=$21,config_revision=(SELECT value+1 FROM revision WHERE id=1) WHERE id=$1`, id, v.Name, v.PublicAddress, v.Notes, v.Enabled, v.ListenHost, v.PortMin, v.PortMax, v.MaxConnections, v.DialTimeoutSeconds, v.IdleTimeoutSeconds, v.AllowDirect, v.TunnelExitEnabled, v.TunnelProtocol, v.TunnelListenHost, v.TunnelListenPort, v.TunnelPublicHost, token, tokenHash, v.IngressEnabled, allowAll)
 	if e != nil {
 		s.dbError(w, e)
 		return
@@ -344,6 +345,23 @@ func (s *Server) saveNodePart(w http.ResponseWriter, r *http.Request, part strin
 	if still > 0 {
 		fail(w, 409, "已有规则使用即将移除的入口关联，请先修改规则")
 		return
+	}
+	if allowAll {
+		rows, qe := tx.Query(ctx, "SELECT ingress_node_id FROM node_tunnel_links WHERE egress_node_id=$1", id)
+		if qe != nil {
+			s.dbError(w, qe)
+			return
+		}
+		for rows.Next() {
+			var ing int64
+			if err := rows.Scan(&ing); err != nil {
+				rows.Close()
+				s.dbError(w, err)
+				return
+			}
+			links[ing] = true
+		}
+		rows.Close()
 	}
 	for ingress := range links {
 		if _, e = tx.Exec(ctx, "INSERT INTO node_tunnel_links(ingress_node_id,egress_node_id,token) VALUES($1,$2,$3) ON CONFLICT DO NOTHING", ingress, id, Secret()); e != nil {

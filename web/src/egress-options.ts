@@ -5,7 +5,7 @@ export function splitEgress(value:string){const [kind,id]=value.split(':');retur
 export function egressChoices(nodes:RuleNode[],groups:RuleEgressGroup[],ingress:number,protocol:string):EgressOption[]{
  const entry=nodes.find(n=>n.id===ingress)
  const multiplier=(n:RuleNode)=>Math.round((Number(entry?.ingress_multiplier??1)+Number(n.egress_multiplier??0))*10000)/10000
- const available=nodes.filter(n=>n.id!==ingress&&n.tunnel_exit_enabled&&n.allowed_ingress_ids.includes(ingress)&&(!n.tunnel_protocol.endsWith('_udp')||protocol==='udp'))
+ const available=nodes.filter(n=>n.id!==ingress&&n.tunnel_exit_enabled&&(n.allowed_ingress_ids.length===0||n.allowed_ingress_ids.includes(ingress))&&(!n.tunnel_protocol.endsWith('_udp')||protocol==='udp'))
  const ids=new Set(available.map(n=>n.id))
  return [
   ...(entry?.allow_direct?[{value:'node:0',name:'#0 不使用隧道，直接转发',kind:'direct' as const,hint:entry.ingress_multiplier!=null?`${Number(entry.ingress_multiplier)} 倍`:undefined}]:[]),

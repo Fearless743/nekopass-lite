@@ -72,6 +72,7 @@ CREATE TABLE IF NOT EXISTS nodes (
  config_revision bigint NOT NULL DEFAULT 0,
  allow_direct boolean NOT NULL DEFAULT true,
  tunnel_exit_enabled boolean NOT NULL DEFAULT false,
+ tunnel_exit_allow_all_ingress boolean NOT NULL DEFAULT false,
  tunnel_protocol text NOT NULL DEFAULT 'plain_tcp' CHECK(tunnel_protocol IN ('plain_tcp','tls_tcp','plain_h2','tls_h2','plain_udp','dtls_udp','random_tcp','random_h2','random_udp','tls_h3')),
  tunnel_listen_host text NOT NULL DEFAULT '0.0.0.0',
  tunnel_listen_port integer NOT NULL DEFAULT 0 CHECK(tunnel_listen_port=0 OR tunnel_listen_port BETWEEN 1 AND 65535),

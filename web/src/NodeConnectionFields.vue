@@ -51,7 +51,7 @@ watch(()=>nodeForm.value.tunnel_transport,transport=>{if(transport==='h3'){nodeF
    <el-select v-model="nodeForm.allowed_ingress_ids" multiple filterable placeholder="选择入口节点">
     <el-option v-for="n in nodes.filter(n=>n.id!==nodeID&&n.ingress_enabled)" :key="n.id" :label="n.name" :value="n.id"/>
    </el-select>
-   <span class="field-tip">用户还需要同时获得入口和出口所属节点组的套餐权限。</span>
+   <span class="field-tip">留空且开启出口时允许任何入口使用此出口；用户还需要同时获得入口和出口所属节点组的套餐权限。</span>
   </el-form-item>
   <el-form-item label="传输协议">
    <div class="admin-actions">

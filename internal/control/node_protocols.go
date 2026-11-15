@@ -60,7 +60,7 @@ func loadNodeInput(ctx context.Context, db interface {
 	var data []byte
 	err := db.QueryRow(ctx, `SELECT name,public_address,notes,enabled,listen_host,port_min,port_max,max_connections,dial_timeout_seconds,idle_timeout_seconds,token,token_hash,ingress_enabled,allow_direct,tunnel_exit_enabled,tunnel_protocol,tunnel_listen_host,tunnel_listen_port,tunnel_public_host,tls_config,
  COALESCE((SELECT array_agg(group_id ORDER BY group_id) FROM node_group_members WHERE node_id=n.id),'{}'),
- COALESCE((SELECT array_agg(ingress_node_id ORDER BY ingress_node_id) FROM node_tunnel_links WHERE egress_node_id=n.id),'{}')
+ CASE WHEN n.tunnel_exit_allow_all_ingress THEN '{}'::bigint[] ELSE COALESCE((SELECT array_agg(ingress_node_id ORDER BY ingress_node_id) FROM node_tunnel_links WHERE egress_node_id=n.id),'{}') END
  FROM nodes n WHERE id=$1`, id).Scan(&v.Name, &v.PublicAddress, &v.Notes, &v.Enabled, &v.ListenHost, &v.PortMin, &v.PortMax, &v.MaxConnections, &v.DialTimeoutSeconds, &v.IdleTimeoutSeconds, &v.Token, &hash, &v.IngressEnabled, &v.AllowDirect, &v.TunnelExitEnabled, &v.TunnelProtocol, &v.TunnelListenHost, &v.TunnelListenPort, &v.TunnelPublicHost, &data, &v.GroupIDs, &v.AllowedIngressIDs)
 	if err != nil {
 		return v, hash, err

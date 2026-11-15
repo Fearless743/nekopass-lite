@@ -292,11 +292,34 @@ func putRule(ctx context.Context, tx pgx.Tx, actor store.User, id int64, in Rule
 			return 0, fmt.Errorf("第 %d 个入口：此节点禁止创建新的 UDP 入站规则，请选择其他入口", idx+1)
 		}
 		if e.EgressGroupID != 0 {
-			if e2 := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM user_node_groups ug JOIN node_groups g ON g.id=ug.group_id AND g.enabled JOIN node_group_members m ON m.group_id=g.id AND m.role<>'disabled' JOIN nodes n ON n.id=m.node_id AND n.enabled AND n.tunnel_exit_enabled JOIN node_tunnel_links l ON l.egress_node_id=n.id AND l.ingress_node_id=$2 JOIN user_nodes un ON un.node_id=n.id AND un.user_id=$1 WHERE ug.user_id=$1 AND ug.group_id=$3 AND n.id<>$2 AND ($4='udp' OR n.tunnel_protocol NOT IN ('plain_udp','dtls_udp','random_udp')))`, in.UserID, e.NodeID, e.EgressGroupID, in.Protocol).Scan(&allowed); e2 != nil {
+			if e2 := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM user_node_groups ug JOIN node_groups g ON g.id=ug.group_id AND g.enabled JOIN node_group_members m ON m.group_id=g.id AND m.role<>'disabled' JOIN nodes n ON n.id=m.node_id AND n.enabled AND n.tunnel_exit_enabled AND (n.tunnel_exit_allow_all_ingress OR EXISTS(SELECT 1 FROM node_tunnel_links l WHERE l.egress_node_id=n.id AND l.ingress_node_id=$2)) JOIN user_nodes un ON un.node_id=n.id AND un.user_id=$1 WHERE ug.user_id=$1 AND ug.group_id=$3 AND n.id<>$2 AND ($4='udp' OR n.tunnel_protocol NOT IN ('plain_udp','dtls_udp','random_udp')))`, in.UserID, e.NodeID, e.EgressGroupID, in.Protocol).Scan(&allowed); e2 != nil {
 				return 0, e2
 			}
 			if !allowed {
 				return 0, fmt.Errorf("第 %d 个入口：出口节点组无权限、没有可用出口或不支持当前转发类型", idx+1)
+			}
+			// Ensure tunnel credentials exist for exits that allow any ingress.
+			rows, qe := tx.Query(ctx, `SELECT m.node_id FROM node_group_members m JOIN node_groups g ON g.id=m.group_id AND g.enabled JOIN nodes n ON n.id=m.node_id AND n.enabled AND n.tunnel_exit_enabled AND n.tunnel_exit_allow_all_ingress WHERE m.group_id=$1 AND m.role<>'disabled' AND n.id<>$2`, e.EgressGroupID, e.NodeID)
+			if qe != nil {
+				return 0, qe
+			}
+			var anyExits []int64
+			for rows.Next() {
+				var nid int64
+				if err := rows.Scan(&nid); err != nil {
+					rows.Close()
+					return 0, err
+				}
+				anyExits = append(anyExits, nid)
+			}
+			rows.Close()
+			if err := rows.Err(); err != nil {
+				return 0, err
+			}
+			for _, nid := range anyExits {
+				if _, err := tx.Exec(ctx, "INSERT INTO node_tunnel_links(ingress_node_id,egress_node_id,token) VALUES($1,$2,$3) ON CONFLICT DO NOTHING", e.NodeID, nid, Secret()); err != nil {
+					return 0, err
+				}
 			}
 		} else if e.EgressNodeID == 0 {
 			if e2 := tx.QueryRow(ctx, "SELECT allow_direct FROM nodes WHERE id=$1", e.NodeID).Scan(&allowed); e2 != nil {
@@ -306,10 +329,30 @@ func putRule(ctx context.Context, tx pgx.Tx, actor store.User, id int64, in Rule
 				return 0, fmt.Errorf("第 %d 个入口：此入口不允许直转，请选择出口节点", idx+1)
 			}
 		} else {
-			if e2 := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM node_tunnel_links l JOIN nodes n ON n.id=l.egress_node_id AND n.enabled AND n.tunnel_exit_enabled JOIN user_nodes u ON u.node_id=n.id AND u.user_id=$3 WHERE l.ingress_node_id=$1 AND l.egress_node_id=$2)`, e.NodeID, e.EgressNodeID, in.UserID).Scan(&allowed); e2 != nil {
+			var linkAllowed bool
+			if e2 := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM node_tunnel_links l JOIN nodes n ON n.id=l.egress_node_id AND n.enabled AND n.tunnel_exit_enabled WHERE l.ingress_node_id=$1 AND l.egress_node_id=$2)`, e.NodeID, e.EgressNodeID).Scan(&linkAllowed); e2 != nil {
 				return 0, e2
 			}
-			if !allowed {
+			if !linkAllowed {
+				var anyAllowed bool
+				if e2 := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM nodes n WHERE n.id=$1 AND n.enabled AND n.tunnel_exit_enabled AND n.tunnel_exit_allow_all_ingress)`, e.EgressNodeID).Scan(&anyAllowed); e2 != nil {
+					return 0, e2
+				}
+				if anyAllowed {
+					if _, err := tx.Exec(ctx, "INSERT INTO node_tunnel_links(ingress_node_id,egress_node_id,token) VALUES($1,$2,$3) ON CONFLICT DO NOTHING", e.NodeID, e.EgressNodeID, Secret()); err != nil {
+						return 0, err
+					}
+					linkAllowed = true
+				}
+			}
+			if !linkAllowed {
+				return 0, fmt.Errorf("第 %d 个入口：出口节点未与该入口关联、不可用或用户无权使用", idx+1)
+			}
+			var userAllowed bool
+			if e2 := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM user_nodes WHERE user_id=$1 AND node_id=$2)`, in.UserID, e.EgressNodeID).Scan(&userAllowed); e2 != nil {
+				return 0, e2
+			}
+			if !userAllowed {
 				return 0, fmt.Errorf("第 %d 个入口：出口节点未与该入口关联、不可用或用户无权使用", idx+1)
 			}
 		}

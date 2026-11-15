@@ -25,7 +25,7 @@ const ruleNodeIDs=(r:any)=>r.entries?.length?r.entries.map((e:any)=>e.node_id):[
 const ingressIDs=computed(()=>[...new Set(props.rules.flatMap(r=>form.node_id?[form.node_id]:ruleNodeIDs(r)))])
 const directAllowed=computed(()=>ingressIDs.value.every(id=>props.nodes.some(n=>n.id===id&&n.allow_direct)))
 const exitNodes=computed(()=>props.nodes.filter(n=>n.tunnel_exit_enabled&&
- ingressIDs.value.every(id=>id!==n.id&&n.allowed_ingress_ids.includes(id))&&
+ ingressIDs.value.every(id=>id!==n.id&&(n.allowed_ingress_ids.length===0||n.allowed_ingress_ids.includes(id)))&&
  (!n.tunnel_protocol.endsWith('_udp')||props.rules.every(r=>r.protocol==='udp'))))
 
 const exitChoices=computed(()=>{if(!props.rules.length)return [];const choices=egressChoices(props.nodes,props.egressGroups||[],ingressIDs.value[0]||0,hasUDP.value?'udp':'tcp');return choices.filter(o=>props.rules.every(r=>ruleNodeIDs(r).every((nid:number)=>egressChoices(props.nodes,props.egressGroups||[],form.node_id??nid,r.protocol||'tcp').some(v=>v.value===o.value))))})
