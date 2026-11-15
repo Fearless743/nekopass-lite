@@ -12,7 +12,7 @@ const server=http.createServer((req,res)=>{
  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
  const browser=await chromium.launch({headless:true,...(process.env.NEKOPASS_BROWSER?{executablePath:process.env.NEKOPASS_BROWSER}:{})});
  try{
-  const original={id:6,protocol_version:33,name:'配置测试节点',token:'fixture-key',public_address:'exit.example.test',notes:'',enabled:true,group_ids:[],listen_host:'0.0.0.0',port_min:1024,port_max:65535,max_connections:10000,dial_timeout_seconds:8,idle_timeout_seconds:300,udp_idle_timeout_seconds:60,',ingress_enabled:true,allow_direct:true,tunnel_exit_enabled:false,tunnel_protocol:'plain_tcp',tunnel_transport:'raw_tcp',tunnel_security:'none',tunnel_listen_host:'0.0.0.0',tunnel_listen_port:27443,tunnel_public_host:'exit.example.test',allowed_ingress_ids:[],tls:{server_name:'exit.example.test',fingerprint:'off',certificate_mode:'self_signed',padding_enabled:false,padding_scheme:[]},online:true,sync_error:'',applied_revision:1,config_revision:1,active_connections:0};
+  const original={id:6,protocol_version:33,name:'配置测试节点',token:'fixture-key',public_address:'exit.example.test',notes:'',enabled:true,group_ids:[],listen_host:'0.0.0.0',port_min:1024,port_max:65535,max_connections:10000,dial_timeout_seconds:8,idle_timeout_seconds:300,udp_idle_timeout_seconds:60,ingress_enabled:true,allow_direct:true,tunnel_exit_enabled:false,tunnel_protocol:'plain_tcp',tunnel_transport:'raw_tcp',tunnel_security:'none',tunnel_listen_host:'0.0.0.0',tunnel_listen_port:27443,tunnel_public_host:'exit.example.test',allowed_ingress_ids:[],tls:{server_name:'exit.example.test',fingerprint:'off',certificate_mode:'self_signed',padding_enabled:false,padding_scheme:[]},online:true,sync_error:'',applied_revision:1,config_revision:1,active_connections:0};
   let saved=structuredClone(original);const writes=[],errors=[];
   const page=await browser.newPage({viewport:{width:1440,height:1050}});page.on('pageerror',e=>errors.push(e.message));
   await page.route('**/api/v1/**',async route=>{
@@ -42,7 +42,8 @@ const server=http.createServer((req,res)=>{
   }
   async function openSecurity(){await parent.getByRole('button',{name:'安全性设置',exact:true}).click();return page.getByRole('dialog',{name:'安全性设置',exact:true})}
   async function closeSecurity(dialog,cancel=false){await dialog.getByRole('button',{name:cancel?'取消':'确定',exact:true}).click();await dialog.waitFor({state:'hidden'})}
-  for(const label of ['入口配置','出口配置','出口监听地址','出口监听端口'])assert.equal(await parent.getByText(label,{exact:true}).isVisible(),true,label);
+  for(const label of ['入口配置','出口配置','入口tcp Brutal','UDP 入站规则','允许用户选择直转','入口流量倍率'])assert.equal(await parent.getByText(label,{exact:true}).isVisible(),true,label);
+  for(const label of ['出口流量倍率','隧道对外地址','出口监听地址','出口监听端口','公网隧道端口','允许哪些入口使用此出口'])assert.equal(await parent.getByText(label,{exact:true}).count(),0,label+' must stay hidden while exit is disabled');
   assert.equal(await parent.getByText('安全性',{exact:true}).count(),0);
   assert.equal(await parent.getByRole('button',{name:'安全性设置',exact:true}).locator('..').getByRole('button',{name:'编辑传输协议',exact:true}).count(),1);
   assert.equal(await field(parent,'作为出口节点').getByRole('switch').getAttribute('aria-checked'),'false');
@@ -61,11 +62,16 @@ const server=http.createServer((req,res)=>{
   await muxDialog.getByTestId('mux-enabled').click();await input(muxDialog,'每连接最大子会话数').fill('48');await input(muxDialog,'底层连接数量上限').fill('3');
   await muxDialog.getByRole('button',{name:'确定',exact:true}).click();await muxDialog.waitFor({state:'hidden'});
   await input(parent,'节点名称').fill('已编辑但未保存');
+  await field(parent,'作为出口节点').locator('.el-switch').click();
+  assert.equal(await field(parent,'作为出口节点').getByRole('switch').getAttribute('aria-checked'),'true');
   await input(parent,'公网隧道端口').fill('32443');
   assert.equal(await input(parent,'入口流量倍率').inputValue(),'1');
   assert.equal(await input(parent,'出口流量倍率').inputValue(),'0');
   await input(parent,'入口流量倍率').fill('0');await input(parent,'出口流量倍率').fill('1.2345');
+  await field(parent,'作为出口节点').locator('.el-switch').click();
+  assert.equal(await parent.getByText('出口监听端口',{exact:true}).count(),0,'exit fields must hide again');
   await field(parent,'允许作为入口').locator('.el-switch').click();
+  assert.equal(await parent.getByText('入口流量倍率',{exact:true}).count(),0,'ingress fields must hide');
   let security=await openSecurity();
   await select(security,'安全性','全随机加密');
   for(const label of ['证书模式','uTLS 指纹','连接 SNI（可选）','Fallback 网站地址','TLS Padding'])assert.equal(await security.getByText(label,{exact:true}).count(),0,label+' must be hidden for random encryption');
@@ -111,7 +117,9 @@ const server=http.createServer((req,res)=>{
   await transport('raw(tcp)');security=await openSecurity();assert.equal(await padding(security).inputValue(),policy);
   await select(security,'安全性','不加密');assert.equal(await security.getByTestId('tls-padding-enabled').isVisible(),false);await select(security,'安全性','TLS');assert.equal(await padding(security).inputValue(),policy);await closeSecurity(security);
   await transport('h2');security=await openSecurity();await input(security,'连接 SNI（可选）').fill('final.example.test');await closeSecurity(security);
+  await field(parent,'作为出口节点').locator('.el-switch').click();
   assert.equal(await input(parent,'公网隧道端口').inputValue(),'32443');assert.equal(writes.length,0,'both child dialogs must only update the parent draft');
+  await field(parent,'作为出口节点').locator('.el-switch').click();
   await parent.getByRole('button',{name:'保存并下发',exact:true}).click();await page.getByText('节点配置已保存，密钥可在下方复制',{exact:true}).waitFor();
   assert.equal(writes.length,1);assert.equal(writes[0].endpoint,'/api/v1/admin/nodes/6');
   const body=writes[0].body;assert.equal(body.name,'已编辑但未保存');assert.equal(body.ingress_enabled,false);assert.equal(body.tunnel_exit_enabled,false);assert.equal(body.tunnel_security,'tls');assert.equal(body.tunnel_transport,'h2');
@@ -121,7 +129,8 @@ const server=http.createServer((req,res)=>{
   assert.equal(body.tls.client_sni,'final.example.test');assert.equal(body.tls.path,'/custom/stream');assert.equal(body.tls.host,'stream.example.test');assert.equal(body.tls.pool_size,3);assert.equal(body.tls.public_port,32443);assert.equal(body.tls.dns_credentials.api_token,'fixture');assert.equal(body.tls.fallback_url,'https://fallback.example.test');assert.equal(body.tls.padding_enabled,true);assert.deepEqual(body.mux,{enabled:true,max_connections:3,max_streams:48,idle_timeout_seconds:60});assert.deepEqual(body.tls.padding_scheme,policy.split('\n'));
   await parent.getByRole('button',{name:'关闭',exact:true}).click();
   await page.getByRole('button',{name:'添加节点',exact:true}).click();parent=page.getByRole('dialog',{name:'添加节点',exact:true});
-  assert.equal(await input(parent,'入口流量倍率').inputValue(),'1');assert.equal(await input(parent,'出口流量倍率').inputValue(),'0');
+  assert.equal(await input(parent,'入口流量倍率').inputValue(),'1');
+  assert.equal(await parent.getByText('出口流量倍率',{exact:true}).count(),0,'exit fields hidden for new node');
   assert.equal(await parent.getByTestId('deny-udp-ingress-creation').getByRole('checkbox').isChecked(),false);
   assert.equal(await parent.getByTestId('client-tcp-brutal-enabled').getByRole('switch').getAttribute('aria-checked'),'false');
   await input(parent,'节点名称').fill('新建配置测试');await transport('h2');assert.equal(writes.length,1);assert.equal(await parent.getByTestId('node-security-summary').innerText(),'不加密');
