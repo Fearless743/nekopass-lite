@@ -1,0 +1,57 @@
+# OpenResty (nginx) 反代示例：TLS 由 OpenResty 终止，面板容器仅提供 80 端口 (HTTP)。
+# 假设面板容器已启动并映射 127.0.0.1:80 -> 容器:80 (docker compose 默认)。
+
+upstream nekopass_backend {
+    server 127.0.0.1:80;
+    keepalive 32;
+}
+
+server {
+    listen 80;
+    server_name panel.example.com;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl http2;
+    server_name panel.example.com;
+
+    ssl_certificate     /etc/ssl/certs/panel.example.com.crt;
+    ssl_certificate_key /etc/ssl/private/panel.example.com.key;
+    ssl_protocols       TLSv1.2 TLSv1.3;
+    ssl_session_cache   shared:SSL:10m;
+    ssl_session_timeout 10m;
+
+    client_max_body_size 64m;
+
+    # 节点控制端口：gRPC (HTTP/2) 走 grpc_pass，超时放宽
+    location /nekopass.v1.Control/ {
+        grpc_pass grpc://nekopass_backend;
+        grpc_set_header Host $host;
+        grpc_set_header X-Forwarded-Proto https;
+        grpc_read_timeout  3600s;
+        grpc_send_timeout  3600s;
+    }
+
+    # 面板网页与 API
+    location / {
+        proxy_pass http://nekopass_backend;
+        proxy_http_version 1.1;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-Host  $host;
+        proxy_set_header Upgrade           $http_upgrade;
+        proxy_set_header Connection        $connection_upgrade;
+        proxy_buffering off;
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+    }
+}
+
+# WebSocket 升级映射（放在 http {} 上下文）
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    ''      close;
+}
