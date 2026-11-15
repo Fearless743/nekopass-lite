@@ -6,9 +6,8 @@ import PageShell from '../PageShell.vue'
 import {usePage} from '../page'
 import {api} from '../api'
 import {loadSite} from '../site'
-type SMTP={host:string;port:number;security:string;username:string;password:string;from:string;from_name:string}
-type Settings={registration_email_verification:boolean;terms_url:string;privacy_url:string;registration_enabled:boolean;captcha_mode:string;smtp:SMTP;site_name:string;panel_url:string;agent_host:string;agent_port:number;agent_transport:string;installer_url:string;release_base_url:string;agent_version:string;install_token_minutes:number;proxy_trusted_cidrs:string[];target_deny_cidrs:string[]}
-const form=reactive<Settings>({registration_email_verification:true,terms_url:'',privacy_url:'',registration_enabled:false,captcha_mode:'image',smtp:{host:'',port:587,security:'starttls',username:'',password:'',from:'',from_name:''},site_name:'Nekopass',panel_url:'',agent_host:'',agent_port:9443,agent_transport:'tls',installer_url:'https://github.com/hajidishu/nekopass/releases/latest/download/install-agent.sh',release_base_url:'https://github.com/hajidishu/nekopass/releases/download',agent_version:'latest',install_token_minutes:30,proxy_trusted_cidrs:[],target_deny_cidrs:[]})
+type Settings={site_name:string;panel_url:string;agent_host:string;agent_port:number;agent_transport:string;installer_url:string;release_base_url:string;agent_version:string;install_token_minutes:number;proxy_trusted_cidrs:string[];target_deny_cidrs:string[]}
+const form=reactive<Settings>({site_name:'Nekopass',panel_url:'',agent_host:'',agent_port:9443,agent_transport:'tls',installer_url:'https://github.com/hajidishu/nekopass/releases/latest/download/install-agent.sh',release_base_url:'https://github.com/hajidishu/nekopass/releases/download',agent_version:'latest',install_token_minutes:30,proxy_trusted_cidrs:[],target_deny_cidrs:[]})
 const proxyTrustText=ref(''),targetDenyText=ref('')
 const cidrs=(text:string)=>text.split(/[,\s]+/).filter(Boolean)
 const activeTab=ref('site')
@@ -46,34 +45,7 @@ async function copyKey(){try{await copyText(shownKey.value);ElMessage.success('�
             </el-form>
           </div>
         </el-tab-pane>
-        <el-tab-pane label="用户注册" name="registration">
-          <div class="section-body settings-form">
-            <el-form label-position="top" @submit.prevent="save">
-              <div class="form-section-title">用户注册</div>
-              <el-form-item label="开放注册"><el-switch v-model="form.registration_enabled"/><span class="field-tip">关闭后仅管理员可以创建用户。</span></el-form-item>
-              <el-form-item label="注册邮件验证"><el-switch v-model="form.registration_email_verification"/><span class="field-tip">开启时须配置 SMTP 并验证邮箱；关闭后注册无需邮件验证码，人机验证仍按注册设置执行。</span></el-form-item>
-              <el-form-item label="用户条款 URL"><el-input v-model="form.terms_url" placeholder="https://example.com/terms"/></el-form-item>
-              <el-form-item label="隐私条款 URL"><el-input v-model="form.privacy_url" placeholder="https://example.com/privacy"/></el-form-item>
-              <el-form-item label="人机验证方式"><el-select v-model="form.captcha_mode"><el-option label="关闭" value="off"/><el-option label="图形验证码" value="image"/></el-select></el-form-item>
-            </el-form>
-          </div>
-        </el-tab-pane>
-        <el-tab-pane label="邮件服务" name="mail">
-          <div class="section-body settings-form">
-            <el-form label-position="top" @submit.prevent="save">
-              <div class="form-section-title">SMTP 邮件服务</div>
-              <div class="form-grid"><el-form-item label="SMTP 主机"><el-input v-model="form.smtp.host" placeholder="smtp.example.com"/></el-form-item>
-              <el-form-item label="SMTP 端口"><el-input-number v-model="form.smtp.port" :min="1" :max="65535"/></el-form-item>
-              <el-form-item label="SMTP 连接方式"><el-select v-model="form.smtp.security"><el-option label="STARTTLS（通常 587）" value="starttls"/><el-option label="TLS（通常 465）" value="tls"/><el-option label="明文（本机 / 无认证中继）" value="plain"/></el-select></el-form-item>
-              <el-form-item label="SMTP 用户名"><el-input v-model="form.smtp.username" autocomplete="off"/></el-form-item>
-              <el-form-item label="SMTP 密码 / 授权码"><el-input v-model="form.smtp.password" type="password" show-password autocomplete="new-password"/></el-form-item>
-              <el-form-item label="发件邮箱"><el-input v-model="form.smtp.from" type="email"/></el-form-item>
-              <el-form-item label="发件名称"><el-input v-model="form.smtp.from_name"/></el-form-item>
-              </div>
-            </el-form>
-          </div>
-        </el-tab-pane>
-        <el-tab-pane label="安全与 API" name="security">
+                        <el-tab-pane label="安全与 API" name="security">
           <div class="section-body settings-form">
             <el-form label-position="top" @submit.prevent="save">
               <div class="form-section-title">转发安全</div>
@@ -99,7 +71,6 @@ async function copyKey(){try{await copyText(shownKey.value);ElMessage.success('�
         </el-tab-pane>
       </el-tabs>
       <div class="settings-footer">
-        <el-button type="primary" :loading="busy" @click="save">保存设置</el-button>
         <span class="field-tip">保存所有栏目中的修改</span>
       </div>
     </section>
