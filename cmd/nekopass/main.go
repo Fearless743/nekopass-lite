@@ -96,7 +96,7 @@ func run() error {
 	if *mode != "serve" {
 		return errors.New("invalid mode")
 	}
-	if err = store.CheckSchema(ctx, p); err != nil {
+	if err = store.Migrate(ctx, p); err != nil {
 		return err
 	}
 	server := control.New(p)
