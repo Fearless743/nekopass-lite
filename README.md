@@ -99,6 +99,7 @@ echo "$GHCR_TOKEN" | docker login ghcr.io -u <GitHub 用户名> --password-stdin
 - 重置管理员密码：`docker compose exec nekopass /opt/nekopass/bin/nekopass -mode reset-admin`（存在多个管理员时追加 `-admin-name <账号>`）。
 - 首次启动后如需更换域名或端口，请在后台「系统设置」中修改 Agent 地址；环境变量只在创建初始设置时生效。
 - 节点仍使用上面的安装脚本部署，不需要拉取镜像；镜像只包含面板。
+- 使用 OpenResty/Nginx 反代时，参考 `deploy/openresty.conf.example`（TLS 由 OpenResty 终止，面板容器仅提供 80 端口）。
 
 ## 服务管理
 
