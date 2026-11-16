@@ -36,8 +36,14 @@ watch(()=>[...groupForm.node_ids],syncGroupMembers)
 async function act(f: () => Promise<void>) { busy.value = true; try { await f(); emit('refresh') } catch (e) { ElMessage.error((e as Error).message) } finally { busy.value = false } }
 async function saveNode() { await act(async()=>{
  const creating=!editID.value
- const data=await api<{id:number;token:string;random?:{cipher:string;key:string}}>(creating?'admin/nodes':`admin/nodes/${editID.value}`,creating?'POST':'PUT',nodeForm)
- editID.value=data.id;nodeForm.token=data.token;if(data.random)nodeForm.random={...data.random};ElMessage.success(creating?'节点已创建，密钥已填入下方':'节点配置已保存，密钥可在下方复制')
+ const data=await api<{id:number;token:string;random?:{cipher:string;key:string};retained_ingress_ids?:number[]}>(creating?'admin/nodes':`admin/nodes/${editID.value}`,creating?'POST':'PUT',nodeForm)
+ editID.value=data.id;nodeForm.token=data.token;if(data.random)nodeForm.random={...data.random}
+ const retained=data.retained_ingress_ids||[]
+ if(retained.length){
+  nodeForm.allowed_ingress_ids=[...new Set([...nodeForm.allowed_ingress_ids,...retained])]
+  const names=retained.map(id=>props.nodes.find(n=>n.id===id)?.name||`#${id}`).join('、')
+  ElMessage.warning(`节点配置已保存；入口 ${names} 仍被现有规则使用，关联已保留。如需移除，请先迁移这些规则。`)
+ }else ElMessage.success(creating?'节点已创建，密钥已填入下方':'节点配置已保存，密钥可在下方复制')
 }) }
 
 async function saveGroup() { await act(async () => { await api(`admin/node-groups${groupID.value ? '/' + groupID.value : ''}`, groupID.value ? 'PUT' : 'POST', groupForm); groupDialog.value = false; ElMessage.success('节点组已保存') }) }

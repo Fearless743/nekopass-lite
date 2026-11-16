@@ -333,18 +333,35 @@ func (s *Server) saveNodePart(w http.ResponseWriter, r *http.Request, part strin
 			return
 		}
 	}
-	if _, e = tx.Exec(ctx, "DELETE FROM node_tunnel_links l WHERE egress_node_id=$1 AND NOT (ingress_node_id=ANY($2::bigint[])) AND NOT EXISTS(SELECT 1 FROM rule_entries e WHERE e.node_id=l.ingress_node_id AND e.egress_node_id=l.egress_node_id)", id, v.AllowedIngressIDs); e != nil {
-		s.dbError(w, e)
-		return
-	}
-	var still int
-	if e = tx.QueryRow(ctx, "SELECT count(*) FROM node_tunnel_links WHERE egress_node_id=$1 AND NOT (ingress_node_id=ANY($2::bigint[]))", id, v.AllowedIngressIDs).Scan(&still); e != nil {
-		s.dbError(w, e)
-		return
-	}
-	if still > 0 {
-		fail(w, 409, "已有规则使用即将移除的入口关联，请先修改规则")
-		return
+	retained := []int64{}
+	if !allowAll {
+		// Explicitly configured ingresses: retire links that no rule uses.
+		// Links still referenced by a rule entry are kept so editing this node
+		// cannot silently break live forwarding; the caller is told which
+		// associations were retained and can migrate the rules first.
+		if _, e = tx.Exec(ctx, "DELETE FROM node_tunnel_links l WHERE egress_node_id=$1 AND NOT (ingress_node_id=ANY($2::bigint[])) AND NOT EXISTS(SELECT 1 FROM rule_entries e WHERE e.node_id=l.ingress_node_id AND e.egress_node_id=l.egress_node_id)", id, v.AllowedIngressIDs); e != nil {
+			s.dbError(w, e)
+			return
+		}
+		rows, qe := tx.Query(ctx, "SELECT ingress_node_id FROM node_tunnel_links WHERE egress_node_id=$1 AND NOT (ingress_node_id=ANY($2::bigint[])) ORDER BY ingress_node_id", id, v.AllowedIngressIDs)
+		if qe != nil {
+			s.dbError(w, qe)
+			return
+		}
+		for rows.Next() {
+			var ingress int64
+			if err := rows.Scan(&ingress); err != nil {
+				rows.Close()
+				s.dbError(w, err)
+				return
+			}
+			retained = append(retained, ingress)
+		}
+		rows.Close()
+		if qe = rows.Err(); qe != nil {
+			s.dbError(w, qe)
+			return
+		}
 	}
 	if allowAll {
 		rows, qe := tx.Query(ctx, "SELECT ingress_node_id FROM node_tunnel_links WHERE egress_node_id=$1", id)
@@ -391,7 +408,7 @@ func (s *Server) saveNodePart(w http.ResponseWriter, r *http.Request, part strin
 		s.dbError(w, e)
 		return
 	}
-	result := map[string]any{"id": id, "token": token, "random": v.Random}
+	result := map[string]any{"id": id, "token": token, "random": v.Random, "retained_ingress_ids": retained}
 	writeJSON(w, 200, result)
 }
 func (s *Server) deleteNode(w http.ResponseWriter, r *http.Request) {

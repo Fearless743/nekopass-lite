@@ -129,7 +129,9 @@ func TestTunnelRuleScopeAndDirectPermission(t *testing.T) {
 		t.Fatal("link credential leaked to user")
 	}
 	exit.AllowedIngressIDs = []int64{}
-	check(request(adminID, fmt.Sprintf("admin/nodes/%d", egress), "PUT", exit), 409)
+	// An empty allowlist means "any ingress", not "remove every association".
+	// Existing rules keep their tunnel links and the save succeeds.
+	check(request(adminID, fmt.Sprintf("admin/nodes/%d", egress), "PUT", exit), 200)
 	exit.AllowedIngressIDs = []int64{ingress}
 	exit.TunnelExitEnabled = false
 	exit.AllowedIngressIDs = []int64{}

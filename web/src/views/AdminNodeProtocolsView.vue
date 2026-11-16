@@ -24,7 +24,15 @@ async function load(){
 const {me,loading,error}=usePage(load,{admin:true})
 async function save(){
  busy.value=true
- try{await api(`admin/nodes/${editID}/protocols`,'PUT',nodeForm);await load();ElMessage.success('入口、出口与传输协议配置已保存并下发')}catch(e){ElMessage.error((e as Error).message)}finally{busy.value=false}
+ try{
+  const data=await api<{retained_ingress_ids?:number[]}>(`admin/nodes/${editID}/protocols`,'PUT',nodeForm)
+  await load()
+  const retained=data.retained_ingress_ids||[]
+  if(retained.length){
+   const names=retained.map(id=>details.value?.ingress_nodes.find(n=>n.id===id)?.name||`#${id}`).join('、')
+   ElMessage.warning(`配置已保存；入口 ${names} 仍被现有规则使用，关联已保留。如需移除，请先迁移这些规则。`)
+  }else ElMessage.success('入口、出口与传输协议配置已保存并下发')
+ }catch(e){ElMessage.error((e as Error).message)}finally{busy.value=false}
 }
 function protocolsSaved(config:NodeTransportInput){applyNodeTransport(nodeForm,config)}
 function securitySaved(config:NodeSecurityInput){applyNodeSecurity(nodeForm,config)}
