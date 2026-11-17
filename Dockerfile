@@ -4,6 +4,7 @@
 FROM --platform=$BUILDPLATFORM node:22-bookworm-slim AS web
 WORKDIR /src/web
 COPY web/package.json web/package-lock.json ./
+COPY third_party/picomatch /src/third_party/picomatch
 RUN npm ci --no-audit --no-fund
 COPY web/ ./
 RUN npm run build
