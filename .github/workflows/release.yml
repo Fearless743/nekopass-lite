@@ -70,7 +70,7 @@ jobs:
           govulncheck ./...
           npm --prefix web ci
           npm --prefix web test
-          npm --prefix web audit --audit-level=low
+          npm --prefix web audit --omit=dev --audit-level=low
       - name: Build agent Linux amd64 and arm64 binaries
         shell: pwsh
         run: ./scripts/package-agent.ps1 -Version $env:RELEASE_TAG

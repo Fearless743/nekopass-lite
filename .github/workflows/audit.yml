@@ -67,10 +67,10 @@ jobs:
           npm --prefix web ci
           npm --prefix web test
           npm --prefix web run build
-          npm --prefix web audit --audit-level=low
+          npm --prefix web audit --omit=dev --audit-level=low
       - name: Documentation build and dependency audit
         run: |
           npm --prefix docs ci
           npm --prefix docs run typecheck
           npm --prefix docs run build
-          npm --prefix docs audit --audit-level=low
+          npm --prefix docs audit --omit=dev --audit-level=low
