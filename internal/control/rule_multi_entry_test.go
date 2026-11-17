@@ -134,19 +134,50 @@ func TestMultiEntrySharedPortDistinctEgress(t *testing.T) {
 	})
 	securityStatus(t, w, 400)
 
-	// Batch egress update applies to every entry; batch ingress switch is rejected.
+	// Batch egress update applies to every entry.
 	var zero int64
 	securityStatus(t, f.request(f.user, "rules/batch", "POST", BatchInput{Action: "edit", IDs: []int64{rid}, Patch: &RuleBatchPatch{EgressNodeID: &zero}}), 200)
 	if err := f.p.QueryRow(ctx, "SELECT count(*) FROM rule_entries WHERE rule_id=$1 AND egress_node_id IS NULL", rid).Scan(&count); err != nil || count != 2 {
 		t.Fatalf("batch egress not applied to all entries: %d %v", count, err)
 	}
-	securityStatus(t, f.request(f.user, "rules/batch", "POST", BatchInput{Action: "edit", IDs: []int64{rid}, Patch: &RuleBatchPatch{NodeID: &entryA}}), 400)
+
+	// Batch entries replace the whole entry list with per-entry exits.
+	securityStatus(t, f.request(f.user, "rules/batch", "POST", BatchInput{Action: "edit", IDs: []int64{rid}, Patch: &RuleBatchPatch{Entries: []RuleEntryInput{
+		{NodeID: entryA, EgressNodeID: exitA},
+		{NodeID: entryB, EgressNodeID: exitB},
+	}}}), 200)
+	var sharedPort int
+	if err := f.p.QueryRow(ctx, "SELECT listen_port FROM rules WHERE id=$1", rid).Scan(&sharedPort); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.p.QueryRow(ctx, "SELECT count(*) FROM rule_entries WHERE rule_id=$1 AND egress_node_id IS NOT NULL", rid).Scan(&count); err != nil || count != 2 {
+		t.Fatalf("batch entries not applied: %d %v", count, err)
+	}
+
+	// Keeping the same ingress set preserves the shared port even when exits change.
+	securityStatus(t, f.request(f.user, "rules/batch", "POST", BatchInput{Action: "edit", IDs: []int64{rid}, Patch: &RuleBatchPatch{Entries: []RuleEntryInput{
+		{NodeID: entryA},
+		{NodeID: entryB},
+	}}}), 200)
+	var keptPort int
+	if err := f.p.QueryRow(ctx, "SELECT listen_port FROM rules WHERE id=$1", rid).Scan(&keptPort); err != nil || keptPort != sharedPort {
+		t.Fatalf("same-entry batch changed port: %d -> %d (%v)", sharedPort, keptPort, err)
+	}
+
+	// Legacy node_id collapses a multi-entry rule to a single ingress.
+	securityStatus(t, f.request(f.user, "rules/batch", "POST", BatchInput{Action: "edit", IDs: []int64{rid}, Patch: &RuleBatchPatch{NodeID: &entryA}}), 200)
+	if err := f.p.QueryRow(ctx, "SELECT count(*) FROM rule_entries WHERE rule_id=$1", rid).Scan(&count); err != nil || count != 1 {
+		t.Fatalf("batch node_id did not collapse entries: %d %v", count, err)
+	}
 
 	// Duplicate and unknown ingress rejected.
 	securityStatus(t, f.request(f.user, "rules", "POST", RuleInput{
 		Protocol: "tcp", Targets: []string{"127.0.0.1:443"},
 		Entries: []RuleEntryInput{{NodeID: entryA}, {NodeID: entryA}},
 	}), 400)
+	securityStatus(t, f.request(f.user, "rules/batch", "POST", BatchInput{Action: "edit", IDs: []int64{rid}, Patch: &RuleBatchPatch{Entries: []RuleEntryInput{
+		{NodeID: entryA}, {NodeID: entryA},
+	}}}), 400)
 }
 
 func TestMultiEntryAdmissionPolicies(t *testing.T) {

@@ -49,8 +49,8 @@ const rules=[1,2,3,4].map(id=>({id,user_id:2,node_id:10,node_name:'入口一',eg
    async function option(dlg,id,label){await dlg.getByTestId(id).click();await page.getByRole('option',{name:label,exact:true}).click()}
    async function advanced(dlg){await dlg.getByText('高级选项（留空不更新）',{exact:true}).click()}
    // New rules cannot select UDP on a restricted ingress. Existing UDP edits remain allowed.
-   const field=(dialog,label)=>dialog.getByText(label,{exact:true}).locator('..');
-   async function selectField(dialog,label,value){await field(dialog,label).locator('.el-select').click();await page.getByRole('option',{name:value,exact:true}).click()}
+   const field=(dialog,label)=>dialog.locator('.el-form-item').filter({hasText:label}).first();
+   async function selectField(dialog,label,value){await field(dialog,label).locator('.el-select').first().click();await page.getByRole('option',{name:value,exact:true}).click()}
    async function inspectUDP(dialog,disabled){await field(dialog,'转发类型').locator('.el-select').click();assert.equal(await page.getByRole('option',{name:'UDP',exact:true}).getAttribute('aria-disabled')==='true',disabled);await page.getByRole('option',{name:'TCP',exact:true}).click()}
    async function cancelRule(dialog){await dialog.getByRole('button',{name:'取消',exact:true}).click();await dialog.waitFor({state:'hidden'})}
    await page.getByRole('button',{name:'添加规则',exact:true}).click();let ruleDialog=page.getByRole('dialog',{name:'添加规则',exact:true});
@@ -58,40 +58,44 @@ const rules=[1,2,3,4].map(id=>({id,user_id:2,node_id:10,node_name:'入口一',eg
    await rows().nth(0).getByRole('button',{name:'编辑规则',exact:true}).click();ruleDialog=page.getByRole('dialog',{name:'编辑规则',exact:true});await inspectUDP(ruleDialog,true);await cancelRule(ruleDialog);
    await rows().nth(2).getByRole('button',{name:'编辑规则',exact:true}).click();ruleDialog=page.getByRole('dialog',{name:'编辑规则',exact:true});await inspectUDP(ruleDialog,false);await cancelRule(ruleDialog);
    await rows().nth(2).getByRole('button',{name:'复制规则',exact:true}).click();ruleDialog=page.getByRole('dialog',{name:'添加规则',exact:true});
-   await ruleDialog.getByRole('button',{name:'确定',exact:true}).click();await page.getByText('此节点禁止创建新的 UDP 入站规则，请选择其他入口',{exact:true}).waitFor();assert.equal(calls.length,0);await cancelRule(ruleDialog);
+   await ruleDialog.getByRole('button',{name:'确定',exact:true}).click();await page.getByText('所选入口禁止创建新的 UDP 入站规则，请选择其他入口',{exact:true}).waitFor();assert.equal(calls.length,0);await cancelRule(ruleDialog);
    await select([0,1]);let dlg=await open();
-   await option(dlg,'batch-rule-egress','#0 不使用隧道，直接转发');
-   await option(dlg,'batch-rule-ingress','入口二');
-   await dlg.getByTestId('batch-rule-ingress').hover();await dlg.getByTestId('batch-rule-ingress').locator('.el-select__clear').click();
+   // Rules with identical entries are prefilled; each entry has its own exit.
+   await option(dlg,'batch-rule-entry-egress-0','#0 不使用隧道，直接转发');
    await advanced(dlg);await option(dlg,'batch-rule-balance','轮询');await option(dlg,'batch-rule-proxy-send','关闭');
    // A normal page refresh must not change the IDs captured by the modal.
    await page.waitForTimeout(5100);
    if(!managed)await page.screenshot({path:path.join(artifacts,'rule-batch-dialog-desktop.png'),fullPage:true});
    await dlg.getByRole('button',{name:'确定',exact:true}).click();await dlg.waitFor({state:'hidden'});
-   assert.deepEqual(calls.at(-1),{path:managed?'admin/users/2/rules/batch':'rules/batch',body:{ids:[1,2],action:'edit',patch:{egress_node_id:0,balance:'round_robin',proxy_send_enabled:false}}});
+   assert.deepEqual(calls.at(-1),{path:managed?'admin/users/2/rules/batch':'rules/batch',body:{ids:[1,2],action:'edit',patch:{entries:[{node_id:10,egress_node_id:0,egress_group_id:0}],balance:'round_robin',proxy_send_enabled:false}}});
    await select([0,1]);dlg=await open();const previous=calls.length;
    await dlg.getByRole('button',{name:'确定',exact:true}).click();await page.getByText('请选择至少一个需要更新的字段',{exact:true}).waitFor();assert.equal(calls.length,previous);
    await dlg.getByRole('button',{name:'暂停选中规则',exact:true}).click();await dlg.waitFor({state:'hidden'});
    assert.deepEqual(calls.at(-1).body,{ids:[1,2],action:'disable'});
    await select([0,2]);dlg=await open();
-   await dlg.getByTestId('batch-rule-ingress').click();
+   await dlg.getByTestId('batch-rule-entry-ingress-0').click();
    assert.equal(await page.getByRole('option',{name:'入口二（禁止新增 UDP 入站）',exact:true}).getAttribute('aria-disabled'),'true');
    assert.notEqual(await page.getByRole('option',{name:'入口一',exact:true}).getAttribute('aria-disabled'),'true');
    await page.getByRole('option',{name:'入口一',exact:true}).click();
-   await dlg.getByTestId('batch-rule-ingress').hover();await dlg.getByTestId('batch-rule-ingress').locator('.el-select__clear').click();
    await advanced(dlg);await dlg.getByTestId('batch-rule-proxy-send').click();
    const enabled=page.getByRole('option',{name:'开启',exact:true});assert.equal(await enabled.getAttribute('aria-disabled'),'true');
    await page.getByRole('option',{name:'关闭',exact:true}).click();await dlg.getByRole('button',{name:'确定',exact:true}).click();await dlg.waitFor({state:'hidden'});
    assert.deepEqual(calls.at(-1).body,{ids:[1,3],action:'edit',patch:{proxy_send_enabled:false}});
-   await select([3]);dlg=await open();assert.equal(await dlg.getByTestId('batch-rule-ingress').locator('input').first().isDisabled(),true);
+   await select([0,1]);dlg=await open();
+   await dlg.getByTestId('batch-rule-add-entry').click();
+   await option(dlg,'batch-rule-entry-ingress-1','入口二');
+   await dlg.getByRole('button',{name:'确定',exact:true}).click();await dlg.waitFor({state:'hidden'});
+   assert.deepEqual(calls.at(-1).body,{ids:[1,2],action:'edit',patch:{entries:[{node_id:10,egress_node_id:20,egress_group_id:0},{node_id:11,egress_node_id:0,egress_group_id:0}]}});
+   await select([3]);dlg=await open();
+   assert.equal(await dlg.getByTestId('batch-rule-entry-ingress-0').count(),0);
    await advanced(dlg);assert.equal(await dlg.getByTestId('batch-rule-proxy-accept').locator('input').first().isDisabled(),true);
    await option(dlg,'batch-rule-balance','最少连接');await dlg.getByRole('button',{name:'确定',exact:true}).click();await dlg.waitFor({state:'hidden'});
    assert.deepEqual(calls.at(-1).body,{ids:[4],action:'edit',patch:{balance:'least_connections'}});
-   await select([0,1]);dlg=await open();await option(dlg,'batch-rule-egress','出口节点组');
-   assert.equal(await dlg.getByTestId('batch-rule-egress').locator('.is-group .ui-icon').count(),1);
+   await select([0,1]);dlg=await open();await option(dlg,'batch-rule-entry-egress-0','出口节点组');
+   assert.equal(await dlg.getByTestId('batch-rule-entry-egress-0').locator('.is-group .ui-icon').count(),1);
    await dlg.getByRole('button',{name:'确定',exact:true}).click();await dlg.waitFor({state:'hidden'});
-   assert.deepEqual(calls.at(-1).body,{ids:[1,2],action:'edit',patch:{egress_group_id:20}});
-   assert.deepEqual(errors,[]);console.log('PASS browser batch edit, zero/false, clear/omit, polling, pause, mixed UDP, shared TLS; managed='+managed);
+   assert.deepEqual(calls.at(-1).body,{ids:[1,2],action:'edit',patch:{entries:[{node_id:10,egress_node_id:0,egress_group_id:20}]}});
+   assert.deepEqual(errors,[]);console.log('PASS browser batch edit multi-entry, zero/false, clear/omit, polling, pause, mixed UDP, shared TLS; managed='+managed);
    await context.close();
   }
  }finally{await browser.close();await new Promise(resolve=>server.close(resolve))}

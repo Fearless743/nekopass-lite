@@ -40,7 +40,7 @@ function rowEgress(i:number){return entryRows.value[i]?.egress||'node:0'}
 function setRowEgress(i:number,v:string){if(entryRows.value[i])entryRows.value[i].egress=v}
 function addEntry(){entryRows.value.push({node_id:0,egress:'node:0'})}
 function removeEntry(i:number){if(entryRows.value.length>1)entryRows.value.splice(i,1)}
-function selectRowIngress(i:number,id:number){const row=entryRows.value[i];if(!row)return;row.node_id=id;const choices=egressChoices(authorizedNodes.value,egressGroups.value,id,form.protocol||'tcp');row.egress=choices[0]?.value||'node:0'}
+function selectRowIngress(i:number,id:number){const row=entryRows.value[i];if(!row)return;row.node_id=id;if(i===0)form.node_id=id;const choices=egressChoices(authorizedNodes.value,egressGroups.value,id,form.protocol||'tcp');row.egress=choices[0]?.value||'node:0'}
 const portIntersection=computed(()=>{const nodes=entryRows.value.map(r=>eligibleNodes.value.find(n=>n.id===r.node_id)).filter(Boolean) as {port_min:number;port_max:number}[];if(!nodes.length)return null;return nodes.reduce((a,n)=>({port_min:Math.max(a.port_min,n.port_min),port_max:Math.min(a.port_max,n.port_max)}))})
 const portHint=computed(()=>{const r=portIntersection.value;if(!r)return '';return r.port_min>r.port_max?'所选入口端口范围无交集，无法共用监听端口':`${r.port_min}–${r.port_max}`})
 const importExitChoices=computed(()=>egressChoices(importAuthorizedNodes.value,egressGroups.value,importNodeID.value,'tcp'))

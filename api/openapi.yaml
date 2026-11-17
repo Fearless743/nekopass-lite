@@ -1556,7 +1556,12 @@ components:
       additionalProperties: false
       description: 'For action edit. Omitted or null fields remain unchanged. At least one non-null field is required. All selected rules must pass normal ownership, node permissions and resource validation.'
       properties:
-        node_id: {type: integer, format: int64, minimum: 1, nullable: true, description: 'Changing an ordinary ingress assigns a new random port; same ingress retains the port. Shared TLS rules cannot move through this patch. Multi-ingress rules cannot change ingress through this patch; edit each rule instead.'}
+        node_id: {type: integer, format: int64, minimum: 1, nullable: true, description: 'Sets a single ingress, collapsing any multi-ingress rule to that entry. Changing an ordinary ingress assigns a new random port; same ingress retains the port. Shared TLS rules cannot move through this patch; use entries instead.'}
+        entries:
+          type: array
+          maxItems: 16
+          description: 'Replaces the complete ingress/egress entry list. Node IDs must be unique. Changing the ingress set reassigns a shared random port unless listen_port is also supplied; keeping the same set retains the port. Mutually exclusive with node_id.'
+          items: {$ref: '#/components/schemas/RuleEntryInput'}
         egress_group_id: {type: integer, format: int64, minimum: 0, nullable: true, description: 'Nonzero selects an explicitly authorized group and clears the single-node exit. Applies to every ingress of a multi-ingress rule.'}
         egress_node_id: {type: integer, format: int64, minimum: 0, nullable: true, description: '0 explicitly selects direct forwarding; requires permission on every effective ingress. Applies to every ingress of a multi-ingress rule.'}
         listen_port: {type: integer, minimum: 0, maximum: 65535, nullable: true, description: 'Shared by every ingress of a multi-ingress rule; must fit the common port-range intersection, 0 reallocates within it.'}

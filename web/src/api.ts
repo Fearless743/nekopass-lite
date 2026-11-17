@@ -1,5 +1,5 @@
 export type TunnelRandom = {cipher:string;key:string}
-export type RuleBatchPatch={node_id?:number;egress_node_id?:number;egress_group_id?:number;listen_port?:number;balance?:string;proxy_accept_enabled?:boolean;proxy_send_enabled?:boolean}
+export type RuleBatchPatch={node_id?:number;entries?:{node_id:number;egress_node_id:number;egress_group_id:number}[];egress_node_id?:number;egress_group_id?:number;listen_port?:number;balance?:string;proxy_accept_enabled?:boolean;proxy_send_enabled?:boolean}
 export type OriginTLS={enabled:boolean;server_name:string;root_ca:string;alpn:string[]}
 export type SharedTLSConfig={name:string;port:number;enabled:boolean;proxy_accept:string;allowed_sni:string[];reject_empty_sni:boolean;unknown_sni_action:string;default_rule_id:number;max_handshakes:number;handshake_timeout_seconds:number}
 export type TLSInboundChoice={id:number;node_id:number;port:number;name:string;allowed_sni:string[]}
